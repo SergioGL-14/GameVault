@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
-import { GAME_STATUSES, STATUS_LABELS, type Game, type GameStatus } from '../../../shared/types'
-import { gameToInput } from '../lib/game'
+import { GAME_STATUSES, type Game, type GameStatus } from '../../../library/model'
+import { gameToInput } from './game-input'
+import { STATUS_LABELS } from './status-labels'
 
 interface GameFormModalProps {
   game: Game

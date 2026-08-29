@@ -1,13 +1,13 @@
 import { app, shell, BrowserWindow, safeStorage } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
-import icon from '../../resources/icon.png?asset'
-import { openDatabase } from './db'
-import { createRepository } from './repository'
+import icon from '../../build/icon.png?asset'
+import { openDatabase } from './library/sqlite-database'
+import { createLibraryRepository } from './library/sqlite-library'
 import { registerIpc } from './ipc'
-import { createCatalogKeyStore } from './catalog-key-store'
-import { createRawgCatalog } from './catalog'
-import { createSteamCatalog } from './steam-catalog'
+import { createCatalogKeyStore } from './catalog/rawg-key-store'
+import { createRawgCatalog } from './catalog/rawg'
+import { createSteamCatalog } from './catalog/steam'
 
 function createWindow(): void {
   // Create the browser window.
@@ -70,7 +70,7 @@ app.whenReady().then(() => {
     safeStorage
   )
   registerIpc(
-    createRepository(db),
+    createLibraryRepository(db),
     createSteamCatalog(),
     createRawgCatalog(() => catalogKey.get()),
     catalogKey

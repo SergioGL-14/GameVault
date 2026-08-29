@@ -1,4 +1,5 @@
-import { STATUS_LABELS, type Game } from '../../../shared/types'
+import type { Game } from '../../../library/model'
+import { STATUS_LABELS } from './status-labels'
 
 interface GameCardProps {
   game: Game

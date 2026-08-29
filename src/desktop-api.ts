@@ -2,13 +2,9 @@ import type {
   CatalogGameDetail,
   CatalogProvider,
   CatalogSearchResult,
-  CatalogStatus,
-  Game,
-  GameInput,
-  LibraryStats,
-  Profile,
-  ProfileInput
-} from './types'
+  CatalogStatus
+} from './catalog/model'
+import type { Game, GameInput, LibraryStats, Profile, ProfileInput } from './library/model'
 
 export const IPC = {
   listGames: 'games:list',

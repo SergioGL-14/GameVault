@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3'
-import { validateGameInput, validateProfileInput } from '../shared/validate'
+import { validateGameInput, validateProfileInput } from '../../library/validation'
 import type {
   Game,
   GameInput,
@@ -8,7 +8,7 @@ import type {
   LibraryStats,
   Profile,
   ProfileInput
-} from '../shared/types'
+} from '../../library/model'
 
 type Row = {
   id: number
@@ -73,7 +73,7 @@ function toGame(row: Row): Game {
   }
 }
 
-export interface GameRepository {
+export interface LibraryRepository {
   listGames(): Game[]
   createGame(input: GameInput): Game
   updateGame(id: number, input: GameInput): Game
@@ -83,7 +83,7 @@ export interface GameRepository {
   getStats(): LibraryStats
 }
 
-export function createRepository(db: Database.Database): GameRepository {
+export function createLibraryRepository(db: Database.Database): LibraryRepository {
   const insertGame = db.prepare(
     `INSERT INTO games (
        source, catalog_id, title, description, status, playtime_minutes, rating, notes,

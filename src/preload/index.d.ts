@@ -1,9 +1,7 @@
-import { ElectronAPI } from '@electron-toolkit/preload'
-import type { GameVaultApi } from '../shared/api'
+import type { GameVaultApi } from '../desktop-api'
 
 declare global {
   interface Window {
-    electron: ElectronAPI
     api: GameVaultApi
   }
 }

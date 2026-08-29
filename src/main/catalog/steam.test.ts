@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createSteamCatalog } from './steam-catalog'
+import { createSteamCatalog } from './steam'
 
 describe('catálogo de Steam', () => {
   it('busca juegos sin añadir credenciales', async () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createRawgCatalog } from './catalog'
+import { createRawgCatalog } from './rawg'
 
 describe('catálogo RAWG', () => {
   it('normaliza resultados de búsqueda sin exponer la clave', async () => {

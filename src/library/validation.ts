@@ -1,4 +1,4 @@
-import { GAME_STATUSES, type GameInput, type ProfileInput } from './types'
+import { GAME_STATUSES, type GameInput, type ProfileInput } from './model'
 
 export class ValidationError extends Error {
   constructor(message: string) {

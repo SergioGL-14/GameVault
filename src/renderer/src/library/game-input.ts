@@ -1,4 +1,5 @@
-import type { CatalogGameDetail, Game, GameInput } from '../../../shared/types'
+import type { CatalogGameDetail } from '../../../catalog/model'
+import type { Game, GameInput } from '../../../library/model'
 
 export function gameToInput(game: Game): GameInput {
   return {

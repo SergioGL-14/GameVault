@@ -1,4 +1,8 @@
-import type { CatalogGameDetail, CatalogSearchResult } from '../shared/types'
+import type {
+  AuthenticatedGameCatalog,
+  CatalogGameDetail,
+  CatalogSearchResult
+} from '../../catalog/model'
 
 type FetchLike = typeof fetch
 
@@ -42,15 +46,6 @@ function searchResult(game: RawgSearchGame): CatalogSearchResult | null {
     platforms: platforms(game.platforms),
     metacritic: game.metacritic ?? null
   }
-}
-
-export interface GameCatalog {
-  search(query: string): Promise<CatalogSearchResult[]>
-  getGame(catalogId: number): Promise<CatalogGameDetail>
-}
-
-export interface AuthenticatedGameCatalog extends GameCatalog {
-  verifyKey(key: string): Promise<void>
 }
 
 export function createRawgCatalog(

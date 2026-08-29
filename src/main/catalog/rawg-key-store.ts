@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
-import type { CatalogStatus } from '../shared/types'
+import type { CatalogStatus } from '../../catalog/model'
 
 export interface CatalogKeyStore {
   get(): string | null

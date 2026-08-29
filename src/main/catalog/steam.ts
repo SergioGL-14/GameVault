@@ -1,5 +1,4 @@
-import type { CatalogGameDetail, CatalogSearchResult } from '../shared/types'
-import type { GameCatalog } from './catalog'
+import type { CatalogGameDetail, CatalogSearchResult, GameCatalog } from '../../catalog/model'
 
 type FetchLike = typeof fetch
 type SteamSearchResponse = {

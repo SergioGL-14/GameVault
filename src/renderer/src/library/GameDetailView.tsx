@@ -1,5 +1,6 @@
-import { STATUS_LABELS, type Game } from '../../../shared/types'
-import { formatDuration, releaseYear } from '../lib/format'
+import type { Game } from '../../../library/model'
+import { formatDuration, releaseYear } from '../format'
+import { STATUS_LABELS } from './status-labels'
 
 interface GameDetailViewProps {
   game: Game

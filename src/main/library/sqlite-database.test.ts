@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import Database from 'better-sqlite3'
 import { describe, expect, it } from 'vitest'
-import { openDatabase } from './db'
+import { openDatabase } from './sqlite-database'
 
 describe('migraciones SQLite', () => {
   it('amplía el esquema inicial conservando juegos, perfil y carátula', () => {

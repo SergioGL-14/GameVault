@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
-import { STATUS_LABELS, type Game, type LibraryStats, type Profile } from '../../../shared/types'
-import { formatDuration } from '../lib/format'
+import type { Game, LibraryStats, Profile } from '../../../library/model'
+import { formatDuration } from '../format'
+import { STATUS_LABELS } from '../library/status-labels'
 
 interface ProfileViewProps {
   profile: Profile

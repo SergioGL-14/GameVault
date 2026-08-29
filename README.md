@@ -66,13 +66,15 @@ npm run build:win
 
 ```text
 src/
-|- main/       Electron main process, SQLite repository, catalog providers, IPC
-|- preload/    Narrow contextBridge API exposed to the renderer
-|- renderer/   React interface: profile, library, game pages, import flow
-`- shared/     Domain types, IPC contract, and input validation
+|- library/    Framework-free library model and input validation
+|- catalog/    Provider-neutral catalog model and contract
+|- main/       Electron IPC plus SQLite, Steam, and RAWG adapters
+|- preload/    Narrow GameVault API exposed through contextBridge
+|- renderer/   React features grouped by library, profile, and catalog
+`- desktop-api.ts  Contract shared by Electron and the renderer
 ```
 
-The renderer never talks to SQLite or external catalogs directly. Steam and RAWG responses are normalized in the main process before they enter the library.
+The library model has no Electron, React, database, or provider dependencies. The renderer never talks to SQLite or external catalogs directly; Steam and RAWG responses are normalized in main-process adapters before they enter the library.
 
 ## Current limits
 

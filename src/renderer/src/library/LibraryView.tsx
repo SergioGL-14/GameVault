@@ -1,6 +1,7 @@
 import { useDeferredValue, useState } from 'react'
-import { GAME_STATUSES, STATUS_LABELS, type Game, type GameStatus } from '../../../shared/types'
+import { GAME_STATUSES, type Game, type GameStatus } from '../../../library/model'
 import GameCard from './GameCard'
+import { STATUS_LABELS } from './status-labels'
 
 interface LibraryViewProps {
   games: Game[]

@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { openDatabase } from './db'
-import { createRepository, type GameRepository } from './repository'
-import { ValidationError } from '../shared/validate'
-import type { GameInput } from '../shared/types'
+import { ValidationError } from '../../library/validation'
+import type { GameInput } from '../../library/model'
+import { openDatabase } from './sqlite-database'
+import { createLibraryRepository, type LibraryRepository } from './sqlite-library'
 
-function makeRepo(): GameRepository {
-  return createRepository(openDatabase(':memory:'))
+function makeRepo(): LibraryRepository {
+  return createLibraryRepository(openDatabase(':memory:'))
 }
 
 const baseInput: GameInput = { title: 'Hollow Knight', status: 'jugando' }

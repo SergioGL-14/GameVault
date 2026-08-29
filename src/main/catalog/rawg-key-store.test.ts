@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { createCatalogKeyStore, type Encryption } from './catalog-key-store'
+import { createCatalogKeyStore, type Encryption } from './rawg-key-store'
 
 const encryption: Encryption = {
   isEncryptionAvailable: () => true,

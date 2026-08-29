@@ -1,13 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import type {
-  CatalogProvider,
-  CatalogSearchResult,
-  CatalogStatus,
-  Game,
-  GameInput
-} from '../../../shared/types'
-import { catalogGameToInput } from '../lib/game'
-import { formatError, releaseYear } from '../lib/format'
+import type { CatalogProvider, CatalogSearchResult, CatalogStatus } from '../../../catalog/model'
+import type { Game, GameInput } from '../../../library/model'
+import { formatError, releaseYear } from '../format'
+import { catalogGameToInput } from '../library/game-input'
 
 interface AddGameModalProps {
   onAdd: (input: GameInput) => Promise<Game>

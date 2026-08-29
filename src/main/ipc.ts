@@ -1,12 +1,12 @@
 import { ipcMain } from 'electron'
-import { IPC } from '../shared/api'
-import type { CatalogProvider, GameInput, ProfileInput } from '../shared/types'
-import type { GameRepository } from './repository'
-import type { CatalogKeyStore } from './catalog-key-store'
-import type { AuthenticatedGameCatalog, GameCatalog } from './catalog'
+import type { AuthenticatedGameCatalog, CatalogProvider, GameCatalog } from '../catalog/model'
+import { IPC } from '../desktop-api'
+import type { GameInput, ProfileInput } from '../library/model'
+import type { CatalogKeyStore } from './catalog/rawg-key-store'
+import type { LibraryRepository } from './library/sqlite-library'
 
 export function registerIpc(
-  repo: GameRepository,
+  repo: LibraryRepository,
   steamCatalog: GameCatalog,
   rawgCatalog: AuthenticatedGameCatalog,
   catalogKey: CatalogKeyStore

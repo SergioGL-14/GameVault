@@ -1,6 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { electronAPI } from '@electron-toolkit/preload'
-import { IPC, type GameVaultApi } from '../shared/api'
+import { IPC, type GameVaultApi } from '../desktop-api'
 
 const api: GameVaultApi = {
   listGames: () => ipcRenderer.invoke(IPC.listGames),
@@ -18,19 +17,13 @@ const api: GameVaultApi = {
     ipcRenderer.invoke(IPC.getCatalogGame, provider, catalogId)
 }
 
-// Use `contextBridge` APIs to expose Electron APIs to
-// renderer only if context isolation is enabled, otherwise
-// just add to the DOM global.
 if (process.contextIsolated) {
   try {
-    contextBridge.exposeInMainWorld('electron', electronAPI)
     contextBridge.exposeInMainWorld('api', api)
   } catch (error) {
     console.error(error)
   }
 } else {
-  // @ts-ignore (define in dts)
-  window.electron = electronAPI
   // @ts-ignore (define in dts)
   window.api = api
 }
