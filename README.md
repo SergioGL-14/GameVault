@@ -1,57 +1,85 @@
 # GameVault
 
-Biblioteca personal de videojuegos de escritorio, con interfaz inspirada en Steam e integrado todo en español.
+**A personal desktop game library with a profile that actually feels personal.**
 
-## Estado actual (MVP)
+GameVault is where I keep track of the games I own, what I am currently playing, what I have finished, and the titles I still want to get to. It borrows the visual language of Steam profiles and cover walls, but the library itself belongs to the user and stays on the local machine.
 
-- **Perfil editorial**: cabecera personalizable (avatar, fondo, ubicación y bio), nivel derivado de juegos completados, resumen visual, expositor, completados recientes, actividad y géneros frecuentes.
-- **Biblioteca de carátulas**: mural compacto con búsqueda y filtros. Cada juego tiene una ficha independiente con fondo, descripción, capturas, metadatos, progreso, puntuación y notas personales.
-- **Catálogos por proveedor**: Steam es la búsqueda principal sin configuración. RAWG queda como fuente opcional para juegos ausentes de Steam y también se pueden crear fichas manuales.
-- **Persistencia**: base de datos SQLite local (`userData/gamevault.db`).
+The application is still an early MVP. The interface is currently in Spanish because that is the language I use it in; the repository documentation is kept in English.
 
-Lo que quedó para el futuro (no existe todavía): sistema de logros, estadísticas históricas, selección de imágenes desde archivo e integración directa con bibliotecas de plataformas.
+---
 
-## Catálogos
+## What works today
 
-### Steam
+- **Personal profile** with avatar, background, bio, location, level, library summary, featured games, recent completions, current games, and most common genres.
+- **Cover-based library** with text search and status filters.
+- **A proper page for every game** with artwork, description, screenshots, release information, developer/publisher details, personal notes, score, playtime, and completion state.
+- **Steam search by default**. It needs no setup and imports localized store information, artwork, and screenshots.
+- **Optional RAWG search** for games that are missing from Steam. RAWG requires the user's own API key.
+- **Manual entries** when neither catalog has the right game.
+- **Local SQLite storage**. There is no account, cloud service, or remote library database.
 
-No requiere configuración. GameVault consulta los endpoints públicos de búsqueda y detalle de la tienda en español e importa la ficha seleccionada. Estos endpoints funcionan sin API key, pero no forman parte de una API de tienda oficialmente garantizada por Steamworks; están encapsulados para poder sustituirlos si cambian.
+## Adding a game
 
-### RAWG (opcional)
+Open **Library → Add game** and choose one of the three sources:
 
-1. Obtén una clave personal en [RAWG](https://rawg.io/login?forward=developer).
-2. En **Biblioteca → Añadir juego → Buscar en RAWG**, pega la clave y pulsa **Guardar y conectar**.
-3. GameVault verifica la clave y la cifra en `userData/rawg-key.bin` mediante `safeStorage` (DPAPI en Windows). La clave no se expone al renderer ni se guarda en SQLite.
+1. **Steam** — the normal path. Search by title and select the matching game.
+2. **RAWG** — optional fallback for games outside Steam. The key is checked before it is saved and encrypted with Electron `safeStorage`.
+3. **Manual entry** — title, cover URL, and description without any external provider.
 
-En desarrollo también se puede definir `RAWG_API_KEY` en el entorno. No se debe incluir ninguna clave compartida en el repositorio, `.env`, bundle o instalador. La decisión y sus condiciones están documentadas en [`docs/catalog-api.md`](docs/catalog-api.md).
+Imported metadata is copied into the local database, so titles, descriptions, and personal progress remain available offline. Artwork still uses the provider's remote URLs and needs a network connection.
 
-## Stack
+Steam's store search and app-detail endpoints currently work without authentication, but they are not documented as a stable third-party API contract. That is an accepted limitation for this MVP. The provider boundary is deliberately small so it can be replaced by a GameVault API later without changing the library model.
 
-- Electron 39 + electron-vite 5
-- React 19 + TypeScript 5.9
-- better-sqlite3 13 (SQLite vía N-API; los prebuilds incluidos funcionan en Node y Electron sin compilar nativo)
-- Vitest para pruebas del repositorio
+More detail about both providers is in [`docs/catalog-api.md`](docs/catalog-api.md).
 
-## Arquitectura
+## Run it locally
 
-```
-src/
-  shared/    Dominio compartido entre procesos: tipos, canales IPC, validación
-  main/      SQLite, repositorio, proveedores Steam/RAWG, almacén cifrado e IPC
-  preload/   contextBridge: expone window.api (GameVaultApi)
-  renderer/  React: Perfil, mural de Biblioteca, ficha de juego y flujo de importación
-```
+Requirements:
 
-Flujo de datos: el renderer usa `window.api` (contextBridge → `ipcRenderer.invoke`), el main valida la entrada en el repositorio (`guard` del trust boundary) y opera sobre SQLite. Los proveedores externos también quedan en el main y devuelven un modelo normalizado común. Los tipos y validadores del dominio viven en `src/shared`.
-
-## Scripts
+- Node.js 24 or later
+- npm 11 or later
 
 ```bash
-npm run dev        # desarrollo (HMR renderer)
-npm run test       # tests del repositorio (vitest)
-npm run lint       # eslint
-npm run typecheck  # tsc (node + web)
-npm run build:win  # paquete instalable de Windows
+git clone https://github.com/SergioGL-14/GameVault.git
+cd GameVault
+npm install
+npm run dev
 ```
 
-Nota: no hay `postinstall` de electron-builder. better-sqlite3 13 trae prebuilds N-API y no necesita recompilación nativa, por lo que `npm install` funciona sin Visual Studio.
+The SQLite database is created in Electron's `userData` directory. It is not stored inside the repository.
+
+## Checks
+
+```bash
+npm run lint
+npm run typecheck
+npm test
+```
+
+Build a Windows installer with:
+
+```bash
+npm run build:win
+```
+
+## Project layout
+
+```text
+src/
+|- main/       Electron main process, SQLite repository, catalog providers, IPC
+|- preload/    Narrow contextBridge API exposed to the renderer
+|- renderer/   React interface: profile, library, game pages, import flow
+`- shared/     Domain types, IPC contract, and input validation
+```
+
+The renderer never talks to SQLite or external catalogs directly. Steam and RAWG responses are normalized in the main process before they enter the library.
+
+## Current limits
+
+- Achievements are not implemented yet.
+- Store-account imports (Steam library, Epic, itch.io, and others) are not implemented; games are added one at a time.
+- Covers can be replaced by URL, but there is no local image picker yet.
+- RAWG remains a bring-your-own-key option until the project has its own backend.
+- The current UI has one Spanish localization rather than a full translation system.
+
+Those are deliberate boundaries for now. The next useful work is improving the personal profile and building the achievement model, not adding infrastructure the desktop MVP does not need.

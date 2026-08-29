@@ -1,10 +1,15 @@
 {
   "name": "gamevault",
-  "version": "1.0.0",
-  "description": "Biblioteca personal de videojuegos de escritorio, interfaz inspirada en Steam",
+  "version": "0.1.0",
+  "description": "Personal desktop game library with a Steam-style profile and local SQLite data",
   "main": "./out/main/index.js",
-  "author": "example.com",
-  "homepage": "https://electron-vite.org",
+  "author": "SergioGL-14",
+  "homepage": "https://github.com/SergioGL-14/GameVault",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SergioGL-14/GameVault.git"
+  },
+  "bugs": "https://github.com/SergioGL-14/GameVault/issues",
   "scripts": {
     "format": "prettier --write .",
     "lint": "eslint --cache .",

@@ -1,55 +1,52 @@
-# Proveedores de catálogo de GameVault
+# Catalog providers
 
-Fecha de evaluación: 29 de agosto de 2026.
+GameVault currently has three ways to create a game entry:
 
-## Decisión actual
+1. Steam, used by default and requiring no setup.
+2. RAWG, available as an optional fallback with a personal API key.
+3. A completely manual entry.
 
-GameVault utiliza tres vías de entrada, en este orden:
+Both remote providers are converted into the same `CatalogGameDetail` shape before anything reaches SQLite. The rest of the application does not know whether a title came from Steam, RAWG, or a future GameVault service.
 
-1. **Steam** como buscador principal sin configuración.
-2. **RAWG** como proveedor opcional con clave personal para ampliar cobertura.
-3. **Entrada manual** para cualquier juego ausente de ambos catálogos.
+## Steam
 
-Todos los proveedores se normalizan al mismo modelo del dominio antes de guardar una ficha en SQLite. La biblioteca no depende directamente del formato de Steam ni de RAWG, por lo que una futura API propia puede reemplazar estas implementaciones sin rehacer la interfaz o los datos personales.
-
-## Steam: proveedor principal
-
-La tienda expone actualmente dos endpoints HTTPS que responden sin credenciales:
-
-- Búsqueda: `GET https://store.steampowered.com/api/storesearch/?term=portal&l=spanish&cc=ES`
-- Detalle: `GET https://store.steampowered.com/api/appdetails?appids=400&l=spanish&cc=ES`
-
-La búsqueda aporta AppID, título, miniatura, plataformas y Metacritic. El detalle aporta descripción localizada, desarrolladores, distribuidores, géneros, plataformas, fecha, imágenes, fondo y capturas. GameVault deriva además la cápsula vertical de biblioteca a partir del AppID y conserva una alternativa visual cuando no esté disponible.
-
-### Limitación importante
-
-Los endpoints anteriores funcionan públicamente, pero no aparecen en la referencia oficial de Steamworks Web API como un contrato soportado para terceros. Valve documenta que Steamworks contiene métodos públicos y protegidos, pero estos endpoints concretos pertenecen a la tienda y pueden cambiar, limitar peticiones o desaparecer sin compatibilidad garantizada.
-
-Por eso Steam es adecuado para el MVP, pero queda detrás de la interfaz interna `GameCatalog`, con timeout, errores normalizados y persistencia local del resultado importado. No se consulta Steam cada vez que se abre una ficha.
-
-## RAWG: proveedor opcional
-
-RAWG cubre búsqueda, fichas, géneros, plataformas, desarrolladores, imágenes y capturas, incluidos juegos que no tienen página en Steam. Requiere una API key en cada petición.
-
-En una aplicación Electron no se puede distribuir una clave global de forma secreta. Por ahora se utiliza BYOK (_bring your own key_): el usuario puede añadir su propia clave solo si necesita RAWG. GameVault la valida antes de guardarla, la cifra con Electron `safeStorage`, realiza las peticiones desde el proceso principal y nunca la devuelve al renderer.
-
-RAWG exige atribución enlazada en las vistas que usan sus datos o imágenes. Sus condiciones publicadas indican 20.000 peticiones mensuales en el plan gratuito y la página comercial limita dicho plan a proyectos no comerciales. Antes de distribuir o monetizar GameVault debe confirmarse con RAWG el plan aplicable.
-
-## Futura API de GameVault
-
-Si el proyecto se distribuye ampliamente, el siguiente paso será un proxy propio:
+The desktop app currently calls two public Steam Store endpoints:
 
 ```text
-GameVault Desktop -> API GameVault -> proveedores externos
+GET https://store.steampowered.com/api/storesearch/?term=portal&l=spanish&cc=ES
+GET https://store.steampowered.com/api/appdetails?appids=400&l=spanish&cc=ES
 ```
 
-Ese servicio custodiará credenciales compartidas, aplicará caché, límites y control de abuso, y permitirá sustituir fuentes sin publicar una nueva versión del cliente. No se implementa todavía porque el catálogo de Steam y la entrada manual cubren el MVP sin infraestructura adicional.
+Together they provide the AppID, title, platforms, Metacritic score, localized description, release date, developers, publishers, genres, artwork, and screenshots. GameVault also tries Steam's vertical library capsule and falls back to the background artwork when it is unavailable.
 
-## Fuentes primarias
+These store endpoints are practical, but they are not listed in the official Steamworks Web API reference as a supported third-party contract. They may change or apply undocumented rate limits. The client uses a ten-second timeout, produces provider-specific errors, and saves imported data locally so normal library browsing does not keep calling Steam.
 
-- [Steam Store Search: respuesta del endpoint](https://store.steampowered.com/api/storesearch/?term=portal&l=spanish&cc=ES)
-- [Steam Store App Details: respuesta del endpoint](https://store.steampowered.com/api/appdetails?appids=400&l=spanish&cc=ES)
-- [Steamworks Web API Overview](https://partner.steamgames.com/doc/webapi_overview)
+Primary references:
+
+- [Steam Store search response](https://store.steampowered.com/api/storesearch/?term=portal&l=spanish&cc=ES)
+- [Steam Store app-detail response](https://store.steampowered.com/api/appdetails?appids=400&l=spanish&cc=ES)
+- [Steamworks Web API overview](https://partner.steamgames.com/doc/webapi_overview)
+
+## RAWG
+
+RAWG has wider catalog coverage and is useful for games that do not have a Steam store page. It requires a key on every request.
+
+Shipping one shared key inside Electron would expose it to every user, so the current implementation uses a personal key instead. The main process validates the key, encrypts it with Electron `safeStorage`, and keeps it out of the renderer and SQLite database. Removing the key deletes the encrypted file.
+
+RAWG requires linked attribution wherever its data or images appear. Its published free tier is aimed at non-commercial projects and has a monthly request limit. The applicable plan needs to be confirmed with RAWG before a public release relies on it.
+
+Primary references:
+
 - [RAWG API](https://rawg.io/apidocs)
-- [RAWG API Terms](https://rawg.io/tos_api)
+- [RAWG API terms](https://rawg.io/tos_api)
 - [Electron `safeStorage`](https://www.electronjs.org/docs/latest/api/safe-storage)
+
+## Later
+
+If GameVault grows beyond a local desktop project, the clean next step is a small proxy owned by the project:
+
+```text
+GameVault Desktop -> GameVault API -> external providers
+```
+
+That service would keep shared credentials on a server, cache provider responses, and enforce request limits. It is intentionally not part of the MVP while Steam plus manual entries cover normal use.

@@ -4,17 +4,16 @@
 
 ### Added
 
-- Catálogo principal de Steam sin API key, con búsqueda, ficha localizada, carátula, fondo y capturas.
-- Selector de proveedor al añadir juegos: Steam, RAWG opcional o entrada manual.
-- Catálogo RAWG con búsqueda, importación de metadatos y capturas, y clave personal cifrada mediante Electron `safeStorage`.
-- Ficha independiente por juego con fondo, descripción, galería, datos editoriales y progreso personal.
-- Campos de perfil para ubicación, avatar y fondo.
-- Migraciones SQLite no destructivas para instalaciones del primer MVP.
-- Migración de procedencia para distinguir juegos de Steam, RAWG y manuales.
-- Documentación de decisión y condiciones del proveedor en `docs/catalog-api.md`.
+- Steam catalog search and localized game details without an API key.
+- Optional RAWG search with an encrypted personal API key.
+- Manual game entries for titles missing from both catalogs.
+- Individual game pages with artwork, screenshots, metadata, and personal progress.
+- Editable profile background, avatar, location, bio, and featured games.
+- SQLite migrations that preserve data from earlier MVP builds.
+- Tests for the repository, catalog providers, credential storage, and database migration.
 
 ### Changed
 
-- Biblioteca rediseñada como mural denso de carátulas con filtros.
-- Perfil rediseñado con cabecera editorial, resumen visual, expositores y columna lateral de estadísticas reales.
-- Ventana inicial ampliada a 1440 × 900 y mínimo de 980 × 680.
+- Reworked the library into a dense cover wall with search and status filters.
+- Rebuilt the profile around a wide identity header, collection summary, showcases, and real library statistics.
+- Increased the default window to 1440 × 900 with a 980 × 680 minimum.
