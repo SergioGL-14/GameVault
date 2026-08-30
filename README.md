@@ -81,6 +81,8 @@ src/
 
 The library model has no Electron, React, database, or provider dependencies. The renderer never talks to SQLite or external catalogs directly; Steam and RAWG responses are normalized in main-process adapters before they enter the library.
 
+Planned deliveries are tracked in [`ROADMAP.md`](ROADMAP.md) and mirrored in [GitHub issue #11](https://github.com/SergioGL-14/GameVault/issues/11).
+
 ## Current limits
 
 - Achievements are not implemented yet.
