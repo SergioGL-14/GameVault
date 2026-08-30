@@ -7,7 +7,7 @@ Update this file and issue #11 together whenever an item is added, reprioritized
 ## Foundation
 
 - [x] [#9 Automate dependency updates and require CI](https://github.com/SergioGL-14/GameVault/issues/9)
-- [ ] [#7 Protect the desktop API and critical library flows with tests](https://github.com/SergioGL-14/GameVault/issues/7)
+- [x] [#7 Protect the desktop API and critical library flows with tests](https://github.com/SergioGL-14/GameVault/issues/7)
 
 ## Next product deliveries
 
