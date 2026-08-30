@@ -19,3 +19,5 @@
 - Increased the default window to 1440 × 900 with a 980 × 680 minimum.
 - Separated the library and catalog models from Electron, SQLite, provider, and React adapters.
 - Restricted the preload bridge to GameVault operations instead of exposing generic Electron helpers.
+- Updated Electron to version 44 to incorporate current security fixes.
+- Added continuous integration for linting, type checking, tests, and production builds.

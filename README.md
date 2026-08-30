@@ -1,5 +1,7 @@
 # GameVault
 
+[![CI](https://github.com/SergioGL-14/GameVault/actions/workflows/ci.yml/badge.svg)](https://github.com/SergioGL-14/GameVault/actions/workflows/ci.yml)
+
 **A personal desktop game library with a profile that actually feels personal.**
 
 GameVault is where I keep track of the games I own, what I am currently playing, what I have finished, and the titles I still want to get to. It borrows the visual language of Steam profiles and cover walls, but the library itself belongs to the user and stays on the local machine.
@@ -49,6 +51,8 @@ npm run dev
 The SQLite database is created in Electron's `userData` directory. It is not stored inside the repository.
 
 ## Checks
+
+GitHub Actions runs the same checks on every pull request and every push to `main`.
 
 ```bash
 npm run lint
