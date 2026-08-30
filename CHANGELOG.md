@@ -21,3 +21,4 @@
 - Restricted the preload bridge to GameVault operations instead of exposing generic Electron helpers.
 - Updated Electron to version 44 to incorporate current security fixes.
 - Added continuous integration for linting, type checking, tests, and production builds.
+- Added grouped Dependabot updates and required CI protection for `main`.

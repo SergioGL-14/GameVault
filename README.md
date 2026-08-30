@@ -53,6 +53,7 @@ The SQLite database is created in Electron's `userData` directory. It is not sto
 ## Checks
 
 GitHub Actions runs the same checks on every pull request and every push to `main`.
+Dependency updates and the protected-branch recovery procedure are documented in [`docs/repository-maintenance.md`](docs/repository-maintenance.md).
 
 ```bash
 npm run lint
