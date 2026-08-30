@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { GAME_STATUSES, type Game, type GameStatus } from '../../../library/model'
+import { formatError } from '../format'
 import { gameToInput } from './game-input'
 import { STATUS_LABELS } from './status-labels'
 
@@ -43,6 +44,18 @@ export default function GameFormModal({
       })
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason))
+      setBusy(false)
+    }
+  }
+
+  async function remove(): Promise<void> {
+    setBusy(true)
+    setError(null)
+    try {
+      await onDelete(game)
+    } catch (reason) {
+      setError(formatError(reason))
+    } finally {
       setBusy(false)
     }
   }
@@ -121,7 +134,7 @@ export default function GameFormModal({
         </div>
         {error && <p className="modal-error">{error}</p>}
         <footer className="modal-footer">
-          <button type="button" className="danger-button" onClick={() => onDelete(game)}>
+          <button type="button" className="danger-button" onClick={remove} disabled={busy}>
             Eliminar de la biblioteca
           </button>
           <span className="spacer" />
