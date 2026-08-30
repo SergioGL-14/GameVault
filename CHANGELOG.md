@@ -22,3 +22,4 @@
 - Updated Electron to version 44 to incorporate current security fixes.
 - Added continuous integration for linting, type checking, tests, and production builds.
 - Added grouped Dependabot updates and required CI protection for `main`.
+- Added a local roadmap mirror and repository-level guidance for architecture, security, testing, documentation, and protected Git workflows.
