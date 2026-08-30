@@ -11,6 +11,7 @@
 - Editable profile background, avatar, location, bio, and featured games.
 - SQLite migrations that preserve data from earlier MVP builds.
 - Tests for the repository, catalog providers, credential storage, and database migration.
+- Contract tests for the preload and IPC boundaries plus renderer tests for adding, editing, and deleting games.
 
 ### Changed
 
@@ -23,3 +24,5 @@
 - Added continuous integration for linting, type checking, tests, and production builds.
 - Added grouped Dependabot updates and required CI protection for `main`.
 - Added a local roadmap mirror and repository-level guidance for architecture, security, testing, documentation, and protected Git workflows.
+- Validated renderer-supplied IPC data before using library, profile, credential, or catalog dependencies.
+- Kept failed game deletions open with a visible error instead of leaving an unhandled rejection.
