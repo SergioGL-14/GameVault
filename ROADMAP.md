@@ -11,7 +11,7 @@ Update this file and issue #11 together whenever an item is added, reprioritized
 
 ## Next product deliveries
 
-- [ ] [#6 Add manually managed achievements](https://github.com/SergioGL-14/GameVault/issues/6)
+- [x] [#6 Add manually managed achievements](https://github.com/SergioGL-14/GameVault/issues/6)
 - [ ] [#1 Improve catalog failure and offline states](https://github.com/SergioGL-14/GameVault/issues/1)
 - [ ] [#5 Make core flows keyboard and screen-reader accessible](https://github.com/SergioGL-14/GameVault/issues/5)
 - [ ] [#10 Support durable local profile and game images](https://github.com/SergioGL-14/GameVault/issues/10)
