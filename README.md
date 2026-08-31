@@ -31,6 +31,8 @@ Open **Library → Add game** and choose one of the three sources:
 
 Imported metadata is copied into the local database, so titles, descriptions, and personal progress remain available offline. Artwork still uses the provider's remote URLs and needs a network connection.
 
+Catalog failures do not block the local library. The add-game dialog distinguishes connection, timeout, authentication, rate-limit, invalid-input, and provider-response failures, keeps manual entry available, and lets searches be retried explicitly. Rejected RAWG credentials saved by GameVault can be replaced or removed from the same dialog. If `RAWG_API_KEY` supplies the credential, update or remove the environment variable and restart GameVault instead.
+
 Steam's store search and app-detail endpoints currently work without authentication, but they are not documented as a stable third-party API contract. That is an accepted limitation for this MVP. The provider boundary is deliberately small so it can be replaced by a GameVault API later without changing the library model.
 
 More detail about both providers is in [`docs/catalog-api.md`](docs/catalog-api.md).

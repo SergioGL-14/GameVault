@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AuthenticatedGameCatalog, GameCatalog } from '../catalog/model'
+import { CatalogError, type AuthenticatedGameCatalog, type GameCatalog } from '../catalog/model'
 import { IPC } from '../desktop-api'
 import type { LibraryRepository } from './library/sqlite-library'
 import type { CatalogKeyStore } from './catalog/rawg-key-store'
@@ -106,8 +106,8 @@ describe('IPC registration', () => {
     }
 
     invoke(IPC.updateProfile, profile)
-    invoke(IPC.searchCatalog, 'steam', 'Celeste')
-    invoke(IPC.getCatalogGame, 'rawg', 7)
+    await invoke(IPC.searchCatalog, 'steam', 'Celeste')
+    await invoke(IPC.getCatalogGame, 'rawg', 7)
     await invoke(IPC.saveCatalogKey, 'key')
 
     expect(repo.updateProfile).toHaveBeenCalledWith(profile)
@@ -167,11 +167,28 @@ describe('IPC validation', () => {
     expect(rawgCatalog.search).not.toHaveBeenCalled()
   })
 
-  it('rejects malformed catalog searches and keys', async () => {
-    expect(() => invoke(IPC.searchCatalog, 'steam', ' ')).toThrow('búsqueda del catálogo')
-    await expect(invoke(IPC.saveCatalogKey, null)).rejects.toThrow('clave de RAWG')
+  it('returns neutral failures for malformed catalog searches and keys', async () => {
+    await expect(invoke(IPC.searchCatalog, 'steam', ' ')).resolves.toEqual({
+      ok: false,
+      error: { provider: 'steam', kind: 'invalid-input' }
+    })
+    await expect(invoke(IPC.saveCatalogKey, null)).resolves.toEqual({
+      ok: false,
+      error: { provider: 'rawg', kind: 'invalid-input' }
+    })
     expect(steamCatalog.search).not.toHaveBeenCalled()
     expect(rawgCatalog.verifyKey).not.toHaveBeenCalled()
+  })
+
+  it('serializes adapter failures without provider implementation details', async () => {
+    vi.mocked(steamCatalog.search).mockRejectedValueOnce(
+      new CatalogError({ provider: 'steam', kind: 'timeout' })
+    )
+
+    await expect(invoke(IPC.searchCatalog, 'steam', 'Celeste')).resolves.toEqual({
+      ok: false,
+      error: { provider: 'steam', kind: 'timeout' }
+    })
   })
 
   it('normalizes a catalog key before verifying and saving it', async () => {
@@ -181,10 +198,14 @@ describe('IPC validation', () => {
     expect(catalogKey.save).toHaveBeenCalledWith('key')
   })
 
-  it.each([0, -1, 1.5, '7', null])('rejects malformed catalog ID %j', (catalogId) => {
-    expect(() => invoke(IPC.getCatalogGame, 'steam', catalogId)).toThrow(
-      'identificador del catálogo'
-    )
-    expect(steamCatalog.getGame).not.toHaveBeenCalled()
-  })
+  it.each([0, -1, 1.5, '7', null])(
+    'returns a failure for malformed catalog ID %j',
+    async (catalogId) => {
+      await expect(invoke(IPC.getCatalogGame, 'steam', catalogId)).resolves.toEqual({
+        ok: false,
+        error: { provider: 'steam', kind: 'invalid-input' }
+      })
+      expect(steamCatalog.getGame).not.toHaveBeenCalled()
+    }
+  )
 })

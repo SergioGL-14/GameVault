@@ -1,5 +1,11 @@
 import { ipcMain } from 'electron'
-import type { AuthenticatedGameCatalog, GameCatalog } from '../catalog/model'
+import {
+  CatalogError,
+  type AuthenticatedGameCatalog,
+  type CatalogProvider,
+  type CatalogResult,
+  type GameCatalog
+} from '../catalog/model'
 import { IPC } from '../desktop-api'
 import {
   ValidationError,
@@ -23,10 +29,25 @@ export function registerIpc(
     }
   }
 
-  function catalogFor(provider: unknown): GameCatalog {
-    if (provider === 'steam') return steamCatalog
-    if (provider === 'rawg') return rawgCatalog
+  function catalogFor(provider: unknown): { provider: CatalogProvider; catalog: GameCatalog } {
+    if (provider === 'steam') return { provider, catalog: steamCatalog }
+    if (provider === 'rawg') return { provider, catalog: rawgCatalog }
     throw new Error('Proveedor de catálogo no válido')
+  }
+
+  async function catalogResult<T>(
+    provider: CatalogProvider,
+    operation: () => T | Promise<T>
+  ): Promise<CatalogResult<T>> {
+    try {
+      return { ok: true, value: await operation() }
+    } catch (reason) {
+      return {
+        ok: false,
+        error:
+          reason instanceof CatalogError ? reason.failure : { provider, kind: 'provider-response' }
+      }
+    }
   }
 
   ipcMain.handle(IPC.listGames, () => repo.listGames())
@@ -69,27 +90,37 @@ export function registerIpc(
   ipcMain.handle(IPC.getStats, () => repo.getStats())
   ipcMain.handle(IPC.catalogStatus, () => catalogKey.status())
   ipcMain.handle(IPC.saveCatalogKey, async (_event, key: unknown) => {
-    if (typeof key !== 'string') {
-      throw new ValidationError('La clave de RAWG no es válida')
-    }
-    const normalizedKey = key.trim()
-    if (!normalizedKey || normalizedKey.length > 256) {
-      throw new ValidationError('La clave de RAWG no es válida')
-    }
-    await rawgCatalog.verifyKey(normalizedKey)
-    return catalogKey.save(normalizedKey)
+    const verified = await catalogResult('rawg', async () => {
+      if (typeof key !== 'string') {
+        throw new CatalogError({ provider: 'rawg', kind: 'invalid-input' })
+      }
+      const normalizedKey = key.trim()
+      if (!normalizedKey || normalizedKey.length > 256) {
+        throw new CatalogError({ provider: 'rawg', kind: 'invalid-input' })
+      }
+      await rawgCatalog.verifyKey(normalizedKey)
+      return normalizedKey
+    })
+    if (!verified.ok) return verified
+    return { ok: true, value: catalogKey.save(verified.value) } as const
   })
   ipcMain.handle(IPC.clearCatalogKey, () => catalogKey.clear())
   ipcMain.handle(IPC.searchCatalog, (_event, provider: unknown, query: unknown) => {
-    const catalog = catalogFor(provider)
-    if (typeof query !== 'string' || query.trim().length < 2) {
-      throw new ValidationError('La búsqueda del catálogo no es válida')
-    }
-    return catalog.search(query)
+    const selected = catalogFor(provider)
+    return catalogResult(selected.provider, () => {
+      if (typeof query !== 'string' || query.trim().length < 2) {
+        throw new CatalogError({ provider: selected.provider, kind: 'invalid-input' })
+      }
+      return selected.catalog.search(query)
+    })
   })
   ipcMain.handle(IPC.getCatalogGame, (_event, provider: unknown, catalogId: unknown) => {
-    const catalog = catalogFor(provider)
-    positiveInteger(catalogId, 'El identificador del catálogo')
-    return catalog.getGame(catalogId)
+    const selected = catalogFor(provider)
+    return catalogResult(selected.provider, () => {
+      if (!Number.isInteger(catalogId) || (catalogId as number) <= 0) {
+        throw new CatalogError({ provider: selected.provider, kind: 'invalid-input' })
+      }
+      return selected.catalog.getGame(catalogId as number)
+    })
   })
 }
