@@ -1,5 +1,13 @@
-import { useCallback, useEffect, useState } from 'react'
-import type { Game, GameInput, LibraryStats, Profile, ProfileInput } from '../../library/model'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import type {
+  Achievement,
+  AchievementInput,
+  Game,
+  GameInput,
+  LibraryStats,
+  Profile,
+  ProfileInput
+} from '../../library/model'
 import AddGameModal from './catalog/AddGameModal'
 import { formatError } from './format'
 import GameDetailView from './library/GameDetailView'
@@ -30,9 +38,16 @@ function App(): React.JSX.Element {
     totalGames: 0,
     completed: 0,
     playing: 0,
-    totalPlaytimeMinutes: 0
+    totalPlaytimeMinutes: 0,
+    totalAchievements: 0,
+    unlockedAchievements: 0
   })
   const [selectedGameId, setSelectedGameId] = useState<number | null>(null)
+  const selectedGameIdRef = useRef<number | null>(null)
+  const achievementRevisionRef = useRef(0)
+  const [achievements, setAchievements] = useState<Achievement[]>([])
+  const [achievementsLoading, setAchievementsLoading] = useState(false)
+  const [achievementsLoaded, setAchievementsLoaded] = useState(false)
   const [addOpen, setAddOpen] = useState(false)
   const [editGame, setEditGame] = useState<Game | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -66,16 +81,59 @@ function App(): React.JSX.Element {
     }
   }, [])
 
+  useEffect(() => {
+    let active = true
+    if (selectedGameId === null) return
+    const revision = achievementRevisionRef.current
+    window.api
+      .listAchievements(selectedGameId)
+      .then((nextAchievements) => {
+        if (active && revision === achievementRevisionRef.current) {
+          setAchievements(nextAchievements)
+          setAchievementsLoading(false)
+          setAchievementsLoaded(true)
+        }
+      })
+      .catch((reason: unknown) => {
+        if (active && revision === achievementRevisionRef.current) {
+          setAchievementsLoading(false)
+          setError(formatError(reason))
+        }
+      })
+    return () => {
+      active = false
+    }
+  }, [selectedGameId])
+
   const selectedGame = games.find((game) => game.id === selectedGameId) ?? null
 
   function openGame(game: Game): void {
     setTab('biblioteca')
+    setAchievements([])
+    setAchievementsLoading(true)
+    setAchievementsLoaded(false)
+    achievementRevisionRef.current += 1
+    selectedGameIdRef.current = game.id
     setSelectedGameId(game.id)
+  }
+
+  function closeGame(): void {
+    achievementRevisionRef.current += 1
+    selectedGameIdRef.current = null
+    setSelectedGameId(null)
+    setAchievements([])
+    setAchievementsLoading(false)
+    setAchievementsLoaded(false)
   }
 
   async function createGame(input: GameInput): Promise<Game> {
     const created = await window.api.createGame(input)
     setAddOpen(false)
+    setAchievements([])
+    setAchievementsLoading(true)
+    setAchievementsLoaded(false)
+    achievementRevisionRef.current += 1
+    selectedGameIdRef.current = created.id
     setSelectedGameId(created.id)
     await refresh()
     return created
@@ -91,8 +149,58 @@ function App(): React.JSX.Element {
     if (!window.confirm(`¿Eliminar "${game.title}" de tu biblioteca?`)) return
     await window.api.deleteGame(game.id)
     setEditGame(null)
+    achievementRevisionRef.current += 1
+    selectedGameIdRef.current = null
     setSelectedGameId(null)
+    setAchievements([])
+    setAchievementsLoading(false)
+    setAchievementsLoaded(false)
     await refresh()
+  }
+
+  async function refreshAchievementStats(): Promise<void> {
+    try {
+      setStats(await window.api.getStats())
+    } catch (reason) {
+      setError(formatError(reason))
+    }
+  }
+
+  async function createAchievement(gameId: number, input: AchievementInput): Promise<void> {
+    const created = await window.api.createAchievement(gameId, input)
+    if (selectedGameIdRef.current === gameId) {
+      achievementRevisionRef.current += 1
+      setAchievements((current) =>
+        [...current, created].sort((first, second) => first.name.localeCompare(second.name, 'es'))
+      )
+    }
+    await refreshAchievementStats()
+  }
+
+  async function updateAchievement(
+    achievement: Achievement,
+    input: AchievementInput
+  ): Promise<void> {
+    const updated = await window.api.updateAchievement(achievement.id, input)
+    if (selectedGameIdRef.current === achievement.gameId) {
+      achievementRevisionRef.current += 1
+      setAchievements((current) =>
+        current
+          .map((entry) => (entry.id === updated.id ? updated : entry))
+          .sort((first, second) => first.name.localeCompare(second.name, 'es'))
+      )
+    }
+    await refreshAchievementStats()
+  }
+
+  async function deleteAchievement(achievement: Achievement): Promise<void> {
+    if (!window.confirm(`¿Eliminar el logro "${achievement.name}"?`)) return
+    await window.api.deleteAchievement(achievement.id)
+    if (selectedGameIdRef.current === achievement.gameId) {
+      achievementRevisionRef.current += 1
+      setAchievements((current) => current.filter((entry) => entry.id !== achievement.id))
+    }
+    await refreshAchievementStats()
   }
 
   async function toggleShowcase(game: Game): Promise<void> {
@@ -119,7 +227,7 @@ function App(): React.JSX.Element {
           className="brand"
           onClick={() => {
             setTab('perfil')
-            setSelectedGameId(null)
+            closeGame()
           }}
         >
           <span className="brand-mark">G</span>
@@ -131,7 +239,7 @@ function App(): React.JSX.Element {
             className={`tab ${tab === 'perfil' && !selectedGame ? 'active' : ''}`}
             onClick={() => {
               setTab('perfil')
-              setSelectedGameId(null)
+              closeGame()
             }}
           >
             PERFIL
@@ -141,7 +249,7 @@ function App(): React.JSX.Element {
             className={`tab ${tab === 'biblioteca' ? 'active' : ''}`}
             onClick={() => {
               setTab('biblioteca')
-              setSelectedGameId(null)
+              closeGame()
             }}
           >
             BIBLIOTECA
@@ -166,9 +274,15 @@ function App(): React.JSX.Element {
         {selectedGame ? (
           <GameDetailView
             game={selectedGame}
-            onBack={() => setSelectedGameId(null)}
+            achievements={achievements}
+            achievementsLoading={achievementsLoading}
+            achievementsLoaded={achievementsLoaded}
+            onBack={closeGame}
             onEdit={setEditGame}
             onToggleShowcase={toggleShowcase}
+            onCreateAchievement={createAchievement}
+            onUpdateAchievement={updateAchievement}
+            onDeleteAchievement={deleteAchievement}
           />
         ) : tab === 'perfil' ? (
           <ProfileView

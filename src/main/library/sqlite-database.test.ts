@@ -38,6 +38,9 @@ describe('migraciones SQLite', () => {
       migrated
         .prepare("INSERT INTO games (source, catalog_id, title) VALUES ('steam', 400, 'Portal 2')")
         .run()
+      migrated
+        .prepare("INSERT INTO achievements (game_id, name) VALUES (1, 'Sujeto de pruebas')")
+        .run()
       const game = migrated.prepare('SELECT title, cover_url, screenshots FROM games').get() as {
         title: string
         cover_url: string
@@ -52,9 +55,32 @@ describe('migraciones SQLite', () => {
         screenshots: '[]'
       })
       expect(profile).toEqual({ display_name: 'Galvik', location: '', avatar_url: null })
+      expect(
+        migrated.prepare('SELECT name FROM achievements WHERE game_id = 1').pluck().get()
+      ).toBe('Sujeto de pruebas')
       migrated.close()
     } finally {
       rmSync(directory, { recursive: true, force: true })
     }
+  })
+
+  it('creates the achievement schema for a fresh database with enforced ownership', () => {
+    const db = openDatabase(':memory:')
+    const gameId = db.prepare("INSERT INTO games (title) VALUES ('Celeste')").run().lastInsertRowid
+    db.prepare("INSERT INTO achievements (game_id, name) VALUES (?, 'Primer paso')").run(gameId)
+
+    expect(db.pragma('foreign_keys', { simple: true })).toBe(1)
+    expect(db.prepare('SELECT name FROM achievements').pluck().get()).toBe('Primer paso')
+    expect(() =>
+      db.prepare("INSERT INTO achievements (game_id, name) VALUES (999, 'Huérfano')").run()
+    ).toThrow()
+    expect(() =>
+      db
+        .prepare(
+          "INSERT INTO achievements (game_id, name, unlocked, unlocked_at) VALUES (?, 'Incoherente', 0, '2026-08-31')"
+        )
+        .run(gameId)
+    ).toThrow()
+    db.close()
   })
 })

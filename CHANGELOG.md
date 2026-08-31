@@ -12,6 +12,7 @@
 - SQLite migrations that preserve data from earlier MVP builds.
 - Tests for the repository, catalog providers, credential storage, and database migration.
 - Contract tests for the preload and IPC boundaries plus renderer tests for adding, editing, and deleting games.
+- Manually managed game achievements with persisted unlock state, per-game progress, and aggregate profile totals.
 
 ### Changed
 

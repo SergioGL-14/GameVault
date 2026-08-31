@@ -56,6 +56,24 @@ export interface GameInput {
   showcased?: boolean
 }
 
+export interface Achievement {
+  id: number
+  gameId: number
+  name: string
+  description: string
+  iconUrl: string | null
+  unlocked: boolean
+  unlockedAt: string | null
+}
+
+export interface AchievementInput {
+  name: string
+  description?: string
+  iconUrl?: string | null
+  unlocked: boolean
+  unlockedAt?: string | null
+}
+
 export interface Profile {
   displayName: string
   about: string
@@ -71,4 +89,6 @@ export interface LibraryStats {
   completed: number
   playing: number
   totalPlaytimeMinutes: number
+  totalAchievements: number
+  unlockedAchievements: number
 }

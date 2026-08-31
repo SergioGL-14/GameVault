@@ -1,21 +1,62 @@
-import type { Game } from '../../../library/model'
+import { useState } from 'react'
+import type { Achievement, AchievementInput, Game } from '../../../library/model'
 import { formatDuration, releaseYear } from '../format'
+import AchievementFormModal from './AchievementFormModal'
 import { STATUS_LABELS } from './status-labels'
 
 interface GameDetailViewProps {
   game: Game
+  achievements: Achievement[]
+  achievementsLoading: boolean
+  achievementsLoaded: boolean
   onBack: () => void
   onEdit: (game: Game) => void
   onToggleShowcase: (game: Game) => void
+  onCreateAchievement: (gameId: number, input: AchievementInput) => Promise<void>
+  onUpdateAchievement: (achievement: Achievement, input: AchievementInput) => Promise<void>
+  onDeleteAchievement: (achievement: Achievement) => Promise<void>
 }
 
 export default function GameDetailView({
   game,
+  achievements,
+  achievementsLoading,
+  achievementsLoaded,
   onBack,
   onEdit,
-  onToggleShowcase
+  onToggleShowcase,
+  onCreateAchievement,
+  onUpdateAchievement,
+  onDeleteAchievement
 }: GameDetailViewProps): React.JSX.Element {
+  const [achievementForm, setAchievementForm] = useState<Achievement | 'new' | null>(null)
+  const [achievementError, setAchievementError] = useState<string | null>(null)
   const hero = game.backgroundUrl ?? game.screenshots[0] ?? game.coverUrl
+  const unlockedCount = achievements.filter((achievement) => achievement.unlocked).length
+
+  async function toggleAchievement(achievement: Achievement): Promise<void> {
+    setAchievementError(null)
+    try {
+      await onUpdateAchievement(achievement, {
+        name: achievement.name,
+        description: achievement.description,
+        iconUrl: achievement.iconUrl,
+        unlocked: !achievement.unlocked,
+        unlockedAt: null
+      })
+    } catch (reason) {
+      setAchievementError(reason instanceof Error ? reason.message : String(reason))
+    }
+  }
+
+  async function removeAchievement(achievement: Achievement): Promise<void> {
+    setAchievementError(null)
+    try {
+      await onDeleteAchievement(achievement)
+    } catch (reason) {
+      setAchievementError(reason instanceof Error ? reason.message : String(reason))
+    }
+  }
 
   return (
     <article className="game-detail">
@@ -68,6 +109,90 @@ export default function GameDetailView({
             <p className="game-description">
               {game.description || 'Esta ficha todavía no tiene descripción.'}
             </p>
+          </section>
+
+          <section className="detail-section achievements-section">
+            <div className="section-heading">
+              <div>
+                <p className="eyebrow">Progreso personal</p>
+                <h2>Logros</h2>
+              </div>
+              <div className="achievement-heading-actions">
+                <strong>
+                  {unlockedCount} / {achievements.length}
+                </strong>
+                <button
+                  type="button"
+                  className="action-button"
+                  onClick={() => setAchievementForm('new')}
+                  disabled={!achievementsLoaded}
+                >
+                  Añadir logro
+                </button>
+              </div>
+            </div>
+            {achievementError && <p className="modal-error">{achievementError}</p>}
+            {achievementsLoading ? (
+              <p className="achievement-empty">Cargando logros…</p>
+            ) : !achievementsLoaded ? (
+              <p className="achievement-empty">
+                No se pudieron cargar los logros. Vuelve a abrir la ficha para reintentar.
+              </p>
+            ) : achievements.length ? (
+              <div className="achievement-list">
+                {achievements.map((achievement) => (
+                  <article
+                    key={achievement.id}
+                    className={`achievement-card ${achievement.unlocked ? 'unlocked' : ''}`}
+                  >
+                    <div className="achievement-icon">
+                      {achievement.iconUrl ? (
+                        <img src={achievement.iconUrl} alt="" />
+                      ) : (
+                        <span>{achievement.unlocked ? '✓' : '◇'}</span>
+                      )}
+                    </div>
+                    <div className="achievement-copy">
+                      <strong>{achievement.name}</strong>
+                      {achievement.description && <p>{achievement.description}</p>}
+                      <small>
+                        {achievement.unlocked
+                          ? achievement.unlockedAt
+                            ? `Desbloqueado el ${new Date(`${achievement.unlockedAt}T00:00:00`).toLocaleDateString('es')}`
+                            : 'Desbloqueado'
+                          : 'Bloqueado'}
+                      </small>
+                    </div>
+                    <div className="achievement-actions">
+                      <button
+                        type="button"
+                        aria-label={`${achievement.unlocked ? 'Volver a bloquear' : 'Desbloquear'} ${achievement.name}`}
+                        onClick={() => void toggleAchievement(achievement)}
+                      >
+                        {achievement.unlocked ? 'Volver a bloquear' : 'Desbloquear'}
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`Editar ${achievement.name}`}
+                        onClick={() => setAchievementForm(achievement)}
+                      >
+                        Editar
+                      </button>
+                      <button
+                        type="button"
+                        className="danger-link"
+                        aria-label={`Eliminar ${achievement.name}`}
+                        onClick={() => void removeAchievement(achievement)}
+                      >
+                        Eliminar
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <p className="achievement-empty">Añade logros propios para registrar tu progreso.</p>
+            )}
           </section>
 
           {game.screenshots.length > 0 && (
@@ -157,6 +282,18 @@ export default function GameDetailView({
           </section>
         </aside>
       </div>
+      {achievementForm && (
+        <AchievementFormModal
+          gameTitle={game.title}
+          achievement={achievementForm === 'new' ? null : achievementForm}
+          onSave={(input) =>
+            achievementForm === 'new'
+              ? onCreateAchievement(game.id, input)
+              : onUpdateAchievement(achievementForm, input)
+          }
+          onClose={() => setAchievementForm(null)}
+        />
+      )}
     </article>
   )
 }
