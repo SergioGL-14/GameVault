@@ -26,3 +26,4 @@
 - Added a local roadmap mirror and repository-level guidance for architecture, security, testing, documentation, and protected Git workflows.
 - Validated renderer-supplied IPC data before using library, profile, credential, or catalog dependencies.
 - Kept failed game deletions open with a visible error instead of leaving an unhandled rejection.
+- Aligned Node.js type declarations with the supported Node.js 24 runtime.
