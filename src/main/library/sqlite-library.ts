@@ -1,6 +1,12 @@
 import type Database from 'better-sqlite3'
-import { validateGameInput, validateProfileInput } from '../../library/validation'
+import {
+  validateAchievementInput,
+  validateGameInput,
+  validateProfileInput
+} from '../../library/validation'
 import type {
+  Achievement,
+  AchievementInput,
   Game,
   GameInput,
   GameSource,
@@ -33,6 +39,16 @@ type Row = {
   showcased: number
   completed_at: string | null
   added_at: string
+}
+
+type AchievementRow = {
+  id: number
+  game_id: number
+  name: string
+  description: string
+  icon_url: string | null
+  unlocked: number
+  unlocked_at: string | null
 }
 
 function parseList(value: string): string[] {
@@ -73,11 +89,27 @@ function toGame(row: Row): Game {
   }
 }
 
+function toAchievement(row: AchievementRow): Achievement {
+  return {
+    id: row.id,
+    gameId: row.game_id,
+    name: row.name,
+    description: row.description,
+    iconUrl: row.icon_url,
+    unlocked: row.unlocked === 1,
+    unlockedAt: row.unlocked_at
+  }
+}
+
 export interface LibraryRepository {
   listGames(): Game[]
   createGame(input: GameInput): Game
   updateGame(id: number, input: GameInput): Game
   deleteGame(id: number): void
+  listAchievements(gameId: number): Achievement[]
+  createAchievement(gameId: number, input: AchievementInput): Achievement
+  updateAchievement(id: number, input: AchievementInput): Achievement
+  deleteAchievement(id: number): void
   getProfile(): Profile
   updateProfile(input: ProfileInput): Profile
   getStats(): LibraryStats
@@ -108,6 +140,19 @@ export function createLibraryRepository(db: Database.Database): LibraryRepositor
   const deleteGameStmt = db.prepare('DELETE FROM games WHERE id = ?')
   const getGameStmt = db.prepare('SELECT * FROM games WHERE id = ?')
   const listGamesStmt = db.prepare('SELECT * FROM games ORDER BY title COLLATE NOCASE')
+  const getAchievementStmt = db.prepare('SELECT * FROM achievements WHERE id = ?')
+  const listAchievementsStmt = db.prepare(
+    'SELECT * FROM achievements WHERE game_id = ? ORDER BY name COLLATE NOCASE, id'
+  )
+  const insertAchievement = db.prepare(
+    `INSERT INTO achievements (game_id, name, description, icon_url, unlocked, unlocked_at)
+     VALUES (@game_id, @name, @description, @icon_url, @unlocked, @unlocked_at)`
+  )
+  const updateAchievementStmt = db.prepare(
+    `UPDATE achievements SET name = @name, description = @description, icon_url = @icon_url,
+     unlocked = @unlocked, unlocked_at = @unlocked_at WHERE id = @id`
+  )
+  const deleteAchievementStmt = db.prepare('DELETE FROM achievements WHERE id = ?')
 
   function gameValues(
     input: GameInput,
@@ -143,6 +188,16 @@ export function createLibraryRepository(db: Database.Database): LibraryRepositor
     }
   }
 
+  function achievementValues(input: AchievementInput): Record<string, unknown> {
+    return {
+      name: input.name.trim(),
+      description: input.description ?? '',
+      icon_url: input.iconUrl || null,
+      unlocked: input.unlocked ? 1 : 0,
+      unlocked_at: input.unlocked ? (input.unlockedAt ?? null) : null
+    }
+  }
+
   return {
     listGames(): Game[] {
       return (listGamesStmt.all() as Row[]).map(toGame)
@@ -164,6 +219,31 @@ export function createLibraryRepository(db: Database.Database): LibraryRepositor
 
     deleteGame(id: number): void {
       deleteGameStmt.run(id)
+    },
+
+    listAchievements(gameId: number): Achievement[] {
+      return (listAchievementsStmt.all(gameId) as AchievementRow[]).map(toAchievement)
+    },
+
+    createAchievement(gameId: number, input: AchievementInput): Achievement {
+      validateAchievementInput(input)
+      if (!getGameStmt.get(gameId)) throw new Error(`Juego ${gameId} no encontrado`)
+      const result = insertAchievement.run({
+        game_id: gameId,
+        ...achievementValues(input)
+      }) as Database.RunResult
+      return toAchievement(getAchievementStmt.get(result.lastInsertRowid) as AchievementRow)
+    },
+
+    updateAchievement(id: number, input: AchievementInput): Achievement {
+      validateAchievementInput(input)
+      if (!getAchievementStmt.get(id)) throw new Error(`Logro ${id} no encontrado`)
+      updateAchievementStmt.run({ id, ...achievementValues(input) })
+      return toAchievement(getAchievementStmt.get(id) as AchievementRow)
+    },
+
+    deleteAchievement(id: number): void {
+      deleteAchievementStmt.run(id)
     },
 
     getProfile(): Profile {
@@ -219,11 +299,18 @@ export function createLibraryRepository(db: Database.Database): LibraryRepositor
         )
         .all() as { status: GameStatus; count: number; playtime: number }[]
       const byStatus = new Map(rows.map((row) => [row.status, row]))
+      const achievementStats = db
+        .prepare(
+          `SELECT COUNT(*) AS total, COALESCE(SUM(unlocked), 0) AS unlocked FROM achievements`
+        )
+        .get() as { total: number; unlocked: number }
       return {
         totalGames: rows.reduce((sum, row) => sum + row.count, 0),
         completed: byStatus.get('completado')?.count ?? 0,
         playing: byStatus.get('jugando')?.count ?? 0,
-        totalPlaytimeMinutes: rows.reduce((sum, row) => sum + row.playtime, 0)
+        totalPlaytimeMinutes: rows.reduce((sum, row) => sum + row.playtime, 0),
+        totalAchievements: achievementStats.total,
+        unlockedAchievements: achievementStats.unlocked
       }
     }
   }

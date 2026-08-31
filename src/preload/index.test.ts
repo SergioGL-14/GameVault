@@ -31,6 +31,10 @@ describe('preload desktop API', () => {
     ['createGame', IPC.createGame, [{ title: 'Celeste', status: 'pendiente' }]],
     ['updateGame', IPC.updateGame, [7, { title: 'Celeste', status: 'jugando' }]],
     ['deleteGame', IPC.deleteGame, [7]],
+    ['listAchievements', IPC.listAchievements, [7]],
+    ['createAchievement', IPC.createAchievement, [7, { name: 'Primer paso', unlocked: false }]],
+    ['updateAchievement', IPC.updateAchievement, [9, { name: 'Primer paso', unlocked: true }]],
+    ['deleteAchievement', IPC.deleteAchievement, [9]],
     ['getProfile', IPC.getProfile, []],
     [
       'updateProfile',

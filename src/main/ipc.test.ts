@@ -26,6 +26,10 @@ const repo: LibraryRepository = {
   createGame: method<LibraryRepository['createGame']>(),
   updateGame: method<LibraryRepository['updateGame']>(),
   deleteGame: method<LibraryRepository['deleteGame']>(),
+  listAchievements: method<LibraryRepository['listAchievements']>(),
+  createAchievement: method<LibraryRepository['createAchievement']>(),
+  updateAchievement: method<LibraryRepository['updateAchievement']>(),
+  deleteAchievement: method<LibraryRepository['deleteAchievement']>(),
   getProfile: method<LibraryRepository['getProfile']>(),
   updateProfile: method<LibraryRepository['updateProfile']>(),
   getStats: method<LibraryRepository['getStats']>()
@@ -78,6 +82,20 @@ describe('IPC registration', () => {
     expect(repo.deleteGame).toHaveBeenCalledWith(7)
   })
 
+  it('forwards valid achievement calls', () => {
+    const input = { name: 'Primer paso', unlocked: false } as const
+
+    invoke(IPC.listAchievements, 7)
+    invoke(IPC.createAchievement, 7, input)
+    invoke(IPC.updateAchievement, 9, input)
+    invoke(IPC.deleteAchievement, 9)
+
+    expect(repo.listAchievements).toHaveBeenCalledWith(7)
+    expect(repo.createAchievement).toHaveBeenCalledWith(7, input)
+    expect(repo.updateAchievement).toHaveBeenCalledWith(9, input)
+    expect(repo.deleteAchievement).toHaveBeenCalledWith(9)
+  })
+
   it('forwards valid profile and catalog calls', async () => {
     const profile = {
       displayName: 'Jugador',
@@ -114,6 +132,26 @@ describe('IPC validation', () => {
     ).toThrow('tiempo jugado')
     expect(repo.createGame).not.toHaveBeenCalled()
     expect(repo.updateGame).not.toHaveBeenCalled()
+  })
+
+  it.each([0, -1, 1.5, '9', null])('rejects malformed achievement ID %j', (id) => {
+    expect(() => invoke(IPC.deleteAchievement, id)).toThrow('identificador del logro')
+    expect(repo.deleteAchievement).not.toHaveBeenCalled()
+  })
+
+  it('rejects malformed achievement input before persistence', () => {
+    expect(() => invoke(IPC.createAchievement, 7, null)).toThrow('logro')
+    expect(() =>
+      invoke(IPC.updateAchievement, 9, {
+        name: 'Primer paso',
+        unlocked: false,
+        unlockedAt: '2026-08-31'
+      })
+    ).toThrow('bloqueado')
+    expect(() => invoke(IPC.listAchievements, '7')).toThrow('identificador del juego')
+    expect(repo.createAchievement).not.toHaveBeenCalled()
+    expect(repo.updateAchievement).not.toHaveBeenCalled()
+    expect(repo.listAchievements).not.toHaveBeenCalled()
   })
 
   it('rejects malformed profile input', () => {

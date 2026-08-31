@@ -1,4 +1,4 @@
-import { GAME_STATUSES, type GameInput, type ProfileInput } from './model'
+import { GAME_STATUSES, type AchievementInput, type GameInput, type ProfileInput } from './model'
 
 export class ValidationError extends Error {
   constructor(message: string) {
@@ -114,6 +114,33 @@ export function validateGameInput(input: unknown): asserts input is GameInput {
   validateWebUrl(input.backgroundUrl, 'El fondo')
   validateWebUrl(input.website, 'El sitio oficial')
   for (const screenshot of input.screenshots ?? []) validateWebUrl(screenshot, 'Cada captura')
+}
+
+/** Validates untrusted achievement data, including its unlock-state consistency. */
+export function validateAchievementInput(input: unknown): asserts input is AchievementInput {
+  if (!isRecord(input) || typeof input.name !== 'string' || typeof input.unlocked !== 'boolean') {
+    throw new ValidationError('Los datos del logro no son válidos')
+  }
+  if (!input.name.trim()) throw new ValidationError('El nombre del logro no puede estar vacío')
+
+  validateOptionalString(input.description, 'La descripción')
+  validateOptionalString(input.iconUrl, 'El icono', true)
+  validateOptionalString(input.unlockedAt, 'La fecha de desbloqueo', true)
+  validateWebUrl(input.iconUrl, 'El icono')
+  if (input.iconUrl && new URL(input.iconUrl).protocol !== 'https:') {
+    throw new ValidationError('El icono debe ser una URL https válida')
+  }
+
+  if (input.unlockedAt) {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(input.unlockedAt)
+    const date = match ? new Date(`${input.unlockedAt}T00:00:00Z`) : null
+    if (!date || date.toISOString().slice(0, 10) !== input.unlockedAt) {
+      throw new ValidationError('La fecha de desbloqueo no es válida')
+    }
+  }
+  if (!input.unlocked && input.unlockedAt) {
+    throw new ValidationError('Un logro bloqueado no puede tener fecha de desbloqueo')
+  }
 }
 
 /** Validates untrusted profile data and narrows it to the profile input contract. */

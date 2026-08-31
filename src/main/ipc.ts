@@ -1,7 +1,12 @@
 import { ipcMain } from 'electron'
 import type { AuthenticatedGameCatalog, GameCatalog } from '../catalog/model'
 import { IPC } from '../desktop-api'
-import { ValidationError, validateGameInput, validateProfileInput } from '../library/validation'
+import {
+  ValidationError,
+  validateAchievementInput,
+  validateGameInput,
+  validateProfileInput
+} from '../library/validation'
 import type { CatalogKeyStore } from './catalog/rawg-key-store'
 import type { LibraryRepository } from './library/sqlite-library'
 
@@ -37,6 +42,24 @@ export function registerIpc(
   ipcMain.handle(IPC.deleteGame, (_event, id: unknown) => {
     positiveInteger(id, 'El identificador del juego')
     return repo.deleteGame(id)
+  })
+  ipcMain.handle(IPC.listAchievements, (_event, gameId: unknown) => {
+    positiveInteger(gameId, 'El identificador del juego')
+    return repo.listAchievements(gameId)
+  })
+  ipcMain.handle(IPC.createAchievement, (_event, gameId: unknown, input: unknown) => {
+    positiveInteger(gameId, 'El identificador del juego')
+    validateAchievementInput(input)
+    return repo.createAchievement(gameId, input)
+  })
+  ipcMain.handle(IPC.updateAchievement, (_event, id: unknown, input: unknown) => {
+    positiveInteger(id, 'El identificador del logro')
+    validateAchievementInput(input)
+    return repo.updateAchievement(id, input)
+  })
+  ipcMain.handle(IPC.deleteAchievement, (_event, id: unknown) => {
+    positiveInteger(id, 'El identificador del logro')
+    return repo.deleteAchievement(id)
   })
   ipcMain.handle(IPC.getProfile, () => repo.getProfile())
   ipcMain.handle(IPC.updateProfile, (_event, input: unknown) => {

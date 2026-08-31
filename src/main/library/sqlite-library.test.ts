@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { ValidationError } from '../../library/validation'
 import type { GameInput } from '../../library/model'
@@ -114,6 +117,125 @@ describe('repositorio de juegos', () => {
     expect(stats.completed).toBe(2)
     expect(stats.playing).toBe(1)
     expect(stats.totalPlaytimeMinutes).toBe(120)
+    expect(stats.totalAchievements).toBe(0)
+    expect(stats.unlockedAchievements).toBe(0)
+  })
+})
+
+describe('logros', () => {
+  it('persiste los logros al reabrir la base de datos', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'gamevault-achievements-'))
+    const file = join(directory, 'library.db')
+    try {
+      const firstDatabase = openDatabase(file)
+      const firstRepo = createLibraryRepository(firstDatabase)
+      const gameEntry = firstRepo.createGame(baseInput)
+      firstRepo.createAchievement(gameEntry.id, {
+        name: 'Persistente',
+        unlocked: true,
+        unlockedAt: '2026-08-31'
+      })
+      firstDatabase.close()
+
+      const reopenedDatabase = openDatabase(file)
+      const reopenedRepo = createLibraryRepository(reopenedDatabase)
+      expect(reopenedRepo.listAchievements(gameEntry.id)).toMatchObject([
+        { name: 'Persistente', unlocked: true, unlockedAt: '2026-08-31' }
+      ])
+      reopenedDatabase.close()
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
+  it('crea, lista y separa logros por juego', () => {
+    const repo = makeRepo()
+    const celeste = repo.createGame(baseInput)
+    const portal = repo.createGame({ title: 'Portal', status: 'pendiente' })
+
+    const created = repo.createAchievement(celeste.id, {
+      name: '  Primer paso  ',
+      description: 'Completa el prólogo.',
+      iconUrl: 'https://images.example/first.png',
+      unlocked: false
+    })
+    repo.createAchievement(portal.id, { name: 'Despertar', unlocked: false })
+
+    expect(created).toMatchObject({
+      gameId: celeste.id,
+      name: 'Primer paso',
+      description: 'Completa el prólogo.',
+      unlocked: false,
+      unlockedAt: null
+    })
+    expect(repo.listAchievements(celeste.id)).toEqual([created])
+  })
+
+  it('edita, desbloquea y vuelve a bloquear un logro', () => {
+    const repo = makeRepo()
+    const gameEntry = repo.createGame(baseInput)
+    const achievement = repo.createAchievement(gameEntry.id, {
+      name: 'Primer paso',
+      unlocked: false
+    })
+
+    const unlocked = repo.updateAchievement(achievement.id, {
+      name: 'Primer salto',
+      unlocked: true,
+      unlockedAt: '2026-08-31'
+    })
+    expect(unlocked).toMatchObject({
+      name: 'Primer salto',
+      unlocked: true,
+      unlockedAt: '2026-08-31'
+    })
+
+    const relocked = repo.updateAchievement(achievement.id, {
+      name: 'Primer salto',
+      unlocked: false
+    })
+    expect(relocked.unlocked).toBe(false)
+    expect(relocked.unlockedAt).toBeNull()
+  })
+
+  it('borra logros directamente y en cascada con su juego', () => {
+    const repo = makeRepo()
+    const firstGame = repo.createGame(baseInput)
+    const first = repo.createAchievement(firstGame.id, { name: 'Primero', unlocked: false })
+    repo.deleteAchievement(first.id)
+    expect(repo.listAchievements(firstGame.id)).toEqual([])
+
+    const second = repo.createAchievement(firstGame.id, { name: 'Segundo', unlocked: false })
+    repo.deleteGame(firstGame.id)
+    expect(repo.listAchievements(firstGame.id)).toEqual([])
+    expect(() => repo.updateAchievement(second.id, { name: 'Segundo', unlocked: true })).toThrow(
+      'no encontrado'
+    )
+  })
+
+  it('rechaza propietarios, identificadores y datos inválidos', () => {
+    const repo = makeRepo()
+    const gameEntry = repo.createGame(baseInput)
+    expect(() => repo.createAchievement(999, { name: 'Logro', unlocked: false })).toThrow(
+      'Juego 999 no encontrado'
+    )
+    expect(() => repo.updateAchievement(999, { name: 'Logro', unlocked: false })).toThrow(
+      'Logro 999 no encontrado'
+    )
+    expect(() => repo.createAchievement(gameEntry.id, { name: '', unlocked: false })).toThrow(
+      ValidationError
+    )
+  })
+
+  it('calcula totales globales desde SQLite', () => {
+    const repo = makeRepo()
+    const firstGame = repo.createGame(baseInput)
+    const secondGame = repo.createGame({ title: 'Portal', status: 'completado' })
+    repo.createAchievement(firstGame.id, { name: 'Uno', unlocked: true })
+    repo.createAchievement(firstGame.id, { name: 'Dos', unlocked: false })
+    repo.createAchievement(secondGame.id, { name: 'Tres', unlocked: true })
+
+    expect(repo.getStats()).toMatchObject({ totalAchievements: 3, unlockedAchievements: 2 })
   })
 })
 

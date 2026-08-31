@@ -232,6 +232,12 @@ export default function ProfileView({
                   <dd>{stats.playing}</dd>
                 </div>
                 <div>
+                  <dt>Logros</dt>
+                  <dd>
+                    {stats.unlockedAchievements} / {stats.totalAchievements}
+                  </dd>
+                </div>
+                <div>
                   <dt>Horas registradas</dt>
                   <dd>{Math.floor(stats.totalPlaytimeMinutes / 60)}</dd>
                 </div>

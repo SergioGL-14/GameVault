@@ -40,6 +40,20 @@ CREATE TABLE IF NOT EXISTS profile (
 INSERT OR IGNORE INTO profile (id, display_name) VALUES (1, 'Jugador');
 `
 
+const ACHIEVEMENT_SCHEMA = `
+CREATE TABLE IF NOT EXISTS achievements (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  game_id INTEGER NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  icon_url TEXT,
+  unlocked INTEGER NOT NULL DEFAULT 0 CHECK (unlocked IN (0, 1)),
+  unlocked_at TEXT,
+  CHECK (unlocked = 1 OR unlocked_at IS NULL)
+);
+CREATE INDEX IF NOT EXISTS achievements_game_id ON achievements(game_id);
+`
+
 const GAME_COLUMNS: Record<string, string> = {
   source: "TEXT NOT NULL DEFAULT 'manual'",
   catalog_id: 'INTEGER',
@@ -104,10 +118,12 @@ function addMissingColumns(
 export function openDatabase(file: string): Database.Database {
   const db = new Database(file)
   db.pragma('journal_mode = WAL')
+  db.pragma('foreign_keys = ON')
   db.exec(SCHEMA)
   addMissingColumns(db, 'games', GAME_COLUMNS)
   addMissingColumns(db, 'profile', PROFILE_COLUMNS)
   allowSteamSource(db)
+  db.transaction(() => db.exec(ACHIEVEMENT_SCHEMA))()
   db.exec(`
     UPDATE games SET cover_url = cover_path WHERE cover_url IS NULL AND cover_path IS NOT NULL;
     CREATE UNIQUE INDEX IF NOT EXISTS games_catalog_source_id

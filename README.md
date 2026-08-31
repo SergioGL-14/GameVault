@@ -15,6 +15,7 @@ The application is still an early MVP. The interface is currently in Spanish bec
 - **Personal profile** with avatar, background, bio, location, level, library summary, featured games, recent completions, current games, and most common genres.
 - **Cover-based library** with text search and status filters.
 - **A proper page for every game** with artwork, description, screenshots, release information, developer/publisher details, personal notes, score, playtime, and completion state.
+- **Manually managed achievements** on each game page, with unlock progress and aggregate profile totals stored locally.
 - **Steam search by default**. It needs no setup and imports localized store information, artwork, and screenshots.
 - **Optional RAWG search** for games that are missing from Steam. RAWG requires the user's own API key.
 - **Manual entries** when neither catalog has the right game.
@@ -85,10 +86,10 @@ Planned deliveries are tracked in [`ROADMAP.md`](ROADMAP.md) and mirrored in [Gi
 
 ## Current limits
 
-- Achievements are not implemented yet.
+- Achievements are managed manually; provider synchronization and rarity data are not implemented.
 - Store-account imports (Steam library, Epic, itch.io, and others) are not implemented; games are added one at a time.
 - Covers can be replaced by URL, but there is no local image picker yet.
 - RAWG remains a bring-your-own-key option until the project has its own backend.
 - The current UI has one Spanish localization rather than a full translation system.
 
-Those are deliberate boundaries for now. The next useful work is improving the personal profile and building the achievement model, not adding infrastructure the desktop MVP does not need.
+Those are deliberate boundaries for now. The next useful work is strengthening the local desktop experience, not adding infrastructure the MVP does not need.
