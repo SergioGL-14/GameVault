@@ -1432,6 +1432,10 @@ a:hover {
   gap: 8px;
 }
 
+.catalog-setup .catalog-key-field {
+  flex: 1;
+}
+
 .catalog-setup input {
   flex: 1;
 }
@@ -1544,6 +1548,36 @@ select:focus {
   color: #6f7d94;
   line-height: 1.6;
   text-align: center;
+}
+
+.catalog-failure {
+  margin-top: 14px;
+  padding: 14px 16px;
+  color: #d6dfeb;
+  background: linear-gradient(120deg, rgba(115, 50, 57, 0.42), rgba(38, 30, 43, 0.9));
+  border-left: 3px solid var(--red);
+}
+
+.catalog-failure strong,
+.catalog-failure small {
+  display: block;
+}
+
+.catalog-failure p {
+  margin: 5px 0;
+  color: #ffc8cd;
+  line-height: 1.45;
+}
+
+.catalog-failure small {
+  color: #9ba9ba;
+}
+
+.catalog-failure > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
 }
 
 .catalog-footer {

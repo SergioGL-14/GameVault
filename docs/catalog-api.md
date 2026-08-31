@@ -33,6 +33,8 @@ RAWG has wider catalog coverage and is useful for games that do not have a Steam
 
 Shipping one shared key inside Electron would expose it to every user, so the current implementation uses a personal key instead. The main process validates the key, encrypts it with Electron `safeStorage`, and keeps it out of the renderer and SQLite database. Removing the key deletes the encrypted file.
 
+`RAWG_API_KEY` can supply the credential for development and takes precedence over the encrypted file. Environment credentials cannot be changed from the renderer. If RAWG rejects one, update or remove the variable and restart GameVault.
+
 RAWG requires linked attribution wherever its data or images appear. Its published free tier is aimed at non-commercial projects and has a monthly request limit. The applicable plan needs to be confirmed with RAWG before a public release relies on it.
 
 Primary references:
@@ -40,6 +42,21 @@ Primary references:
 - [RAWG API](https://rawg.io/apidocs)
 - [RAWG API terms](https://rawg.io/tos_api)
 - [Electron `safeStorage`](https://www.electronjs.org/docs/latest/api/safe-storage)
+
+## Failure behavior
+
+Steam and RAWG adapters map network and provider failures into the same catalog contract. The renderer receives only the provider and one of these categories:
+
+- Invalid input
+- Offline or unreachable provider
+- Ten-second timeout
+- Authentication failure
+- Temporary rate limit
+- Invalid or unsuccessful provider response
+
+The add-game dialog presents category-specific Spanish guidance and keeps the current query available for an explicit retry. RAWG authentication failures offer actions to replace or remove keys stored by GameVault, or direct environment-key users to `RAWG_API_KEY`. There are no automatic retry loops.
+
+Catalog access is optional. A failed request does not change SQLite data or prevent browsing, editing, or manually extending the local library. Previously imported text metadata remains available offline; remote artwork still requires a connection.
 
 ## Later
 

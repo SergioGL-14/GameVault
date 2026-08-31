@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { GameVaultApi } from '../../desktop-api'
 import type { Achievement, AchievementInput, Game, GameInput } from '../../library/model'
@@ -105,9 +105,12 @@ function createApi(
       unlockedAchievements: achievements.filter((entry) => entry.unlocked).length
     })),
     getCatalogStatus: vi.fn(async () => ({ configured: false, source: null })),
-    saveCatalogKey: vi.fn(async () => ({ configured: true, source: 'saved' as const })),
+    saveCatalogKey: vi.fn(async () => ({
+      ok: true as const,
+      value: { configured: true, source: 'saved' as const }
+    })),
     clearCatalogKey: vi.fn(async () => ({ configured: false, source: null })),
-    searchCatalog: vi.fn(async () => []),
+    searchCatalog: vi.fn(async () => ({ ok: true as const, value: [] })),
     getCatalogGame: vi.fn()
   }
 }
@@ -133,6 +136,11 @@ async function openAchievementPage(api: GameVaultApi): Promise<void> {
       (screen.getByRole('button', { name: 'Añadir logro' }) as HTMLButtonElement).disabled
     ).toBe(false)
   )
+}
+
+async function openAddGameModal(api: GameVaultApi): Promise<void> {
+  await renderLibrary(api)
+  fireEvent.click(screen.getByRole('button', { name: 'Añadir primer juego' }))
 }
 
 afterEach(() => {
@@ -215,6 +223,137 @@ describe('critical library flows', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Eliminar de la biblioteca' }))
 
     expect(await screen.findByText('No se pudo eliminar el juego')).toBeTruthy()
+  })
+})
+
+describe('catalog recovery flows', () => {
+  it('retries a failed search without reopening the modal', async () => {
+    const api = createApi()
+    vi.mocked(api.searchCatalog)
+      .mockResolvedValueOnce({
+        ok: false,
+        error: { provider: 'steam', kind: 'offline' }
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        value: [
+          {
+            source: 'steam',
+            catalogId: 400,
+            title: 'Portal',
+            coverUrl: null,
+            releasedAt: null,
+            platforms: ['Windows'],
+            metacritic: 90
+          }
+        ]
+      })
+    await openAddGameModal(api)
+    fireEvent.change(screen.getByPlaceholderText(/Busca primero en Steam/), {
+      target: { value: 'Portal' }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Buscar' }))
+
+    expect(await screen.findByText(/No se pudo conectar con Steam/)).toBeTruthy()
+    expect(screen.getByText('Tu biblioteca local sigue disponible.')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Reintentar búsqueda' }))
+
+    expect(await screen.findByRole('button', { name: /Portal/ })).toBeTruthy()
+    expect(api.searchCatalog).toHaveBeenCalledTimes(2)
+    expect(api.searchCatalog).toHaveBeenLastCalledWith('steam', 'Portal')
+  })
+
+  it('keeps manual creation available after an offline catalog failure', async () => {
+    const api = createApi()
+    vi.mocked(api.searchCatalog).mockResolvedValueOnce({
+      ok: false,
+      error: { provider: 'steam', kind: 'offline' }
+    })
+    await openAddGameModal(api)
+    fireEvent.change(screen.getByPlaceholderText(/Busca primero en Steam/), {
+      target: { value: 'Hades' }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Buscar' }))
+    await screen.findByText(/No se pudo conectar con Steam/)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Entrada manual' }))
+    fireEvent.change(screen.getByLabelText('Título'), { target: { value: 'Hades' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Crear ficha' }))
+
+    expect(await screen.findByRole('heading', { name: 'Hades' })).toBeTruthy()
+    expect(api.createGame).toHaveBeenCalledWith(expect.objectContaining({ title: 'Hades' }))
+  })
+
+  it('offers replacing or removing a rejected RAWG key', async () => {
+    const api = createApi()
+    vi.mocked(api.getCatalogStatus).mockResolvedValueOnce({ configured: true, source: 'saved' })
+    vi.mocked(api.searchCatalog).mockResolvedValueOnce({
+      ok: false,
+      error: { provider: 'rawg', kind: 'authentication' }
+    })
+    await openAddGameModal(api)
+    fireEvent.click(screen.getByRole('button', { name: /RAWG/ }))
+    const searchbox = await screen.findByPlaceholderText(/Busca juegos fuera de Steam/)
+    fireEvent.change(searchbox, { target: { value: 'Portal' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Buscar' }))
+
+    expect(await screen.findByText(/RAWG rechazó la clave/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Sustituir clave' }))
+    fireEvent.change(screen.getByLabelText('Clave API de RAWG'), {
+      target: { value: 'replacement-key' }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar y conectar' }))
+    await waitFor(() => expect(api.saveCatalogKey).toHaveBeenCalledWith('replacement-key'))
+    fireEvent.click(await screen.findByRole('button', { name: 'Eliminar clave' }))
+
+    await waitFor(() => expect(api.clearCatalogKey).toHaveBeenCalled())
+  })
+
+  it('directs rejected environment credentials to RAWG_API_KEY', async () => {
+    const api = createApi()
+    vi.mocked(api.getCatalogStatus).mockResolvedValueOnce({
+      configured: true,
+      source: 'environment'
+    })
+    vi.mocked(api.searchCatalog).mockResolvedValueOnce({
+      ok: false,
+      error: { provider: 'rawg', kind: 'authentication' }
+    })
+    await openAddGameModal(api)
+    fireEvent.click(screen.getByRole('button', { name: /RAWG/ }))
+    fireEvent.change(await screen.findByPlaceholderText(/Busca juegos fuera de Steam/), {
+      target: { value: 'Portal' }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Buscar' }))
+
+    expect(await screen.findByText(/Actualiza o elimina esa variable de entorno/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Sustituir clave' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Eliminar clave' })).toBeNull()
+  })
+
+  it('prevents navigation while a catalog request is active', async () => {
+    const api = createApi()
+    let finishSearch: ((result: { ok: true; value: [] }) => void) | undefined
+    vi.mocked(api.searchCatalog).mockReturnValueOnce(
+      new Promise((resolve) => {
+        finishSearch = resolve
+      })
+    )
+    await openAddGameModal(api)
+    fireEvent.change(screen.getByPlaceholderText(/Busca primero en Steam/), {
+      target: { value: 'Portal' }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Buscar' }))
+
+    expect((screen.getByRole('button', { name: /RAWG/ }) as HTMLButtonElement).disabled).toBe(true)
+    expect(
+      (screen.getByRole('button', { name: 'Entrada manual' }) as HTMLButtonElement).disabled
+    ).toBe(true)
+    expect((screen.getByRole('button', { name: 'Cerrar' }) as HTMLButtonElement).disabled).toBe(
+      true
+    )
+
+    await act(async () => finishSearch?.({ ok: true, value: [] }))
   })
 })
 

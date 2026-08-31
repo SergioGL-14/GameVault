@@ -1,6 +1,7 @@
 import type {
   CatalogGameDetail,
   CatalogProvider,
+  CatalogResult,
   CatalogSearchResult,
   CatalogStatus
 } from './catalog/model'
@@ -46,8 +47,14 @@ export interface GameVaultApi {
   updateProfile: (input: ProfileInput) => Promise<Profile>
   getStats: () => Promise<LibraryStats>
   getCatalogStatus: () => Promise<CatalogStatus>
-  saveCatalogKey: (key: string) => Promise<CatalogStatus>
+  saveCatalogKey: (key: string) => Promise<CatalogResult<CatalogStatus>>
   clearCatalogKey: () => Promise<CatalogStatus>
-  searchCatalog: (provider: CatalogProvider, query: string) => Promise<CatalogSearchResult[]>
-  getCatalogGame: (provider: CatalogProvider, catalogId: number) => Promise<CatalogGameDetail>
+  searchCatalog: (
+    provider: CatalogProvider,
+    query: string
+  ) => Promise<CatalogResult<CatalogSearchResult[]>>
+  getCatalogGame: (
+    provider: CatalogProvider,
+    catalogId: number
+  ) => Promise<CatalogResult<CatalogGameDetail>>
 }

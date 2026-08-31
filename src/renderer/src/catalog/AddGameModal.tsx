@@ -1,8 +1,14 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import type { CatalogProvider, CatalogSearchResult, CatalogStatus } from '../../../catalog/model'
+import type {
+  CatalogFailure,
+  CatalogProvider,
+  CatalogSearchResult,
+  CatalogStatus
+} from '../../../catalog/model'
 import type { Game, GameInput } from '../../../library/model'
 import { formatError, releaseYear } from '../format'
 import { catalogGameToInput } from '../library/game-input'
+import { catalogFailureMessage } from './catalog-failure'
 
 interface AddGameModalProps {
   onAdd: (input: GameInput) => Promise<Game>
@@ -20,11 +26,14 @@ export default function AddGameModal({ onAdd, onClose }: AddGameModalProps): Rea
   const [apiKey, setApiKey] = useState('')
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<CatalogSearchResult[]>([])
+  const [searched, setSearched] = useState(false)
   const [title, setTitle] = useState('')
   const [coverUrl, setCoverUrl] = useState('')
   const [description, setDescription] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [catalogFailure, setCatalogFailure] = useState<CatalogFailure | null>(null)
+  const [replacingKey, setReplacingKey] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -45,9 +54,16 @@ export default function AddGameModal({ onAdd, onClose }: AddGameModalProps): Rea
     event.preventDefault()
     setBusy(true)
     setError(null)
+    setCatalogFailure(null)
     try {
-      setCatalogStatus(await window.api.saveCatalogKey(apiKey))
+      const result = await window.api.saveCatalogKey(apiKey)
+      if (!result.ok) {
+        setCatalogFailure(result.error)
+        return
+      }
+      setCatalogStatus(result.value)
       setApiKey('')
+      setReplacingKey(false)
     } catch (reason) {
       setError(formatError(reason))
     } finally {
@@ -57,11 +73,24 @@ export default function AddGameModal({ onAdd, onClose }: AddGameModalProps): Rea
 
   async function search(event: FormEvent): Promise<void> {
     event.preventDefault()
+    await performSearch()
+  }
+
+  async function performSearch(): Promise<void> {
     if (mode === 'manual') return
     setBusy(true)
     setError(null)
+    setCatalogFailure(null)
+    setResults([])
+    setSearched(false)
     try {
-      setResults(await window.api.searchCatalog(mode, query))
+      const result = await window.api.searchCatalog(mode, query)
+      if (!result.ok) {
+        setCatalogFailure(result.error)
+        return
+      }
+      setResults(result.value)
+      setSearched(true)
     } catch (reason) {
       setError(formatError(reason))
     } finally {
@@ -72,9 +101,15 @@ export default function AddGameModal({ onAdd, onClose }: AddGameModalProps): Rea
   async function importGame(result: CatalogSearchResult): Promise<void> {
     setBusy(true)
     setError(null)
+    setCatalogFailure(null)
     try {
       const detail = await window.api.getCatalogGame(result.source, result.catalogId)
-      await onAdd(catalogGameToInput(detail))
+      if (!detail.ok) {
+        setCatalogFailure(detail.error)
+        setBusy(false)
+        return
+      }
+      await onAdd(catalogGameToInput(detail.value))
     } catch (reason) {
       setError(formatError(reason))
       setBusy(false)
@@ -101,8 +136,10 @@ export default function AddGameModal({ onAdd, onClose }: AddGameModalProps): Rea
 
   async function clearKey(): Promise<void> {
     setError(null)
+    setCatalogFailure(null)
     try {
       setCatalogStatus(await window.api.clearCatalogKey())
+      setReplacingKey(false)
     } catch (reason) {
       setError(formatError(reason))
     }
@@ -111,18 +148,42 @@ export default function AddGameModal({ onAdd, onClose }: AddGameModalProps): Rea
   function selectMode(nextMode: Mode): void {
     setMode(nextMode)
     setResults([])
+    setSearched(false)
     setError(null)
+    setCatalogFailure(null)
+    setReplacingKey(false)
   }
 
+  function requestClose(): void {
+    if (!busy) onClose()
+  }
+
+  const failureMessage =
+    catalogFailure?.kind === 'authentication' && catalogFailure.provider === 'rawg'
+      ? catalogStatus.source === 'environment'
+        ? 'RAWG rechazó RAWG_API_KEY. Actualiza o elimina esa variable de entorno y reinicia GameVault.'
+        : catalogStatus.source === null
+          ? 'RAWG rechazó la clave introducida. Revísala o prueba con otra.'
+          : catalogFailureMessage(catalogFailure)
+      : catalogFailure
+        ? catalogFailureMessage(catalogFailure)
+        : null
+
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop" onClick={requestClose}>
       <section className="add-modal" onClick={(event) => event.stopPropagation()}>
         <header className="modal-header">
           <div>
             <p className="eyebrow">Nueva incorporación</p>
             <h2>Añadir a la biblioteca</h2>
           </div>
-          <button type="button" className="icon-btn" onClick={onClose} aria-label="Cerrar">
+          <button
+            type="button"
+            className="icon-btn"
+            onClick={requestClose}
+            aria-label="Cerrar"
+            disabled={busy}
+          >
             ×
           </button>
         </header>
@@ -132,6 +193,7 @@ export default function AddGameModal({ onAdd, onClose }: AddGameModalProps): Rea
             type="button"
             className={mode === 'steam' ? 'active' : ''}
             onClick={() => selectMode('steam')}
+            disabled={busy}
           >
             Steam
           </button>
@@ -139,6 +201,7 @@ export default function AddGameModal({ onAdd, onClose }: AddGameModalProps): Rea
             type="button"
             className={mode === 'rawg' ? 'active' : ''}
             onClick={() => selectMode('rawg')}
+            disabled={busy}
           >
             RAWG <small>opcional</small>
           </button>
@@ -146,12 +209,13 @@ export default function AddGameModal({ onAdd, onClose }: AddGameModalProps): Rea
             type="button"
             className={mode === 'manual' ? 'active' : ''}
             onClick={() => selectMode('manual')}
+            disabled={busy}
           >
             Entrada manual
           </button>
         </div>
 
-        {mode === 'rawg' && !catalogStatus.configured && (
+        {mode === 'rawg' && (!catalogStatus.configured || replacingKey) && (
           <div className="catalog-setup">
             <span className="setup-mark">R</span>
             <div>
@@ -165,13 +229,18 @@ export default function AddGameModal({ onAdd, onClose }: AddGameModalProps): Rea
               </a>
             </div>
             <form onSubmit={saveKey}>
-              <input
-                type="password"
-                placeholder="Pega aquí tu API key"
-                value={apiKey}
-                onChange={(event) => setApiKey(event.target.value)}
-                required
-              />
+              <label className="field catalog-key-field">
+                <span>Clave API de RAWG</span>
+                <input
+                  autoFocus={replacingKey}
+                  type="password"
+                  placeholder="Pega aquí tu API key"
+                  value={apiKey}
+                  onChange={(event) => setApiKey(event.target.value)}
+                  disabled={busy}
+                  required
+                />
+              </label>
               <button type="submit" className="action-button" disabled={busy}>
                 Guardar y conectar
               </button>
@@ -179,7 +248,7 @@ export default function AddGameModal({ onAdd, onClose }: AddGameModalProps): Rea
           </div>
         )}
 
-        {(mode === 'steam' || (mode === 'rawg' && catalogStatus.configured)) && (
+        {(mode === 'steam' || (mode === 'rawg' && catalogStatus.configured && !replacingKey)) && (
           <>
             <form className="catalog-search" onSubmit={search}>
               <input
@@ -192,6 +261,7 @@ export default function AddGameModal({ onAdd, onClose }: AddGameModalProps): Rea
                 }
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
+                disabled={busy}
                 minLength={2}
                 required
               />
@@ -222,11 +292,13 @@ export default function AddGameModal({ onAdd, onClose }: AddGameModalProps): Rea
                   <b>＋</b>
                 </button>
               ))}
-              {!results.length && (
+              {!results.length && !catalogFailure && (
                 <p className="catalog-placeholder">
-                  {mode === 'steam'
-                    ? 'Steam es el catálogo principal y no requiere configuración. Busca un título para importar su ficha.'
-                    : 'Usa RAWG cuando un juego no esté en Steam. Tu progreso seguirá guardándose solo en este equipo.'}
+                  {searched
+                    ? 'No se encontraron resultados. Prueba con otro título o usa una entrada manual.'
+                    : mode === 'steam'
+                      ? 'Steam es el catálogo principal y no requiere configuración. Busca un título para importar su ficha.'
+                      : 'Usa RAWG cuando un juego no esté en Steam. Tu progreso seguirá guardándose solo en este equipo.'}
                 </p>
               )}
             </div>
@@ -239,7 +311,7 @@ export default function AddGameModal({ onAdd, onClose }: AddGameModalProps): Rea
                 Datos e imágenes: {mode === 'steam' ? 'Steam' : 'RAWG'} ↗
               </a>
               {mode === 'rawg' && catalogStatus.source === 'saved' && (
-                <button type="button" className="text-button" onClick={clearKey}>
+                <button type="button" className="text-button" onClick={clearKey} disabled={busy}>
                   Eliminar clave
                 </button>
               )}
@@ -272,7 +344,7 @@ export default function AddGameModal({ onAdd, onClose }: AddGameModalProps): Rea
             </label>
             <div className="modal-footer">
               <span className="spacer" />
-              <button type="button" className="quiet-button" onClick={onClose}>
+              <button type="button" className="quiet-button" onClick={requestClose} disabled={busy}>
                 Cancelar
               </button>
               <button type="submit" className="action-button" disabled={busy}>
@@ -282,6 +354,49 @@ export default function AddGameModal({ onAdd, onClose }: AddGameModalProps): Rea
           </form>
         )}
 
+        {catalogFailure && (
+          <div className="catalog-failure" role="alert">
+            <strong>No se pudo completar la operación</strong>
+            <p>{failureMessage}</p>
+            <small>Tu biblioteca local sigue disponible.</small>
+            <div>
+              {mode !== 'manual' &&
+                !replacingKey &&
+                query.trim().length >= 2 &&
+                (mode === 'steam' || catalogStatus.configured) && (
+                  <button
+                    type="button"
+                    className="quiet-button"
+                    onClick={() => void performSearch()}
+                    disabled={busy}
+                  >
+                    Reintentar búsqueda
+                  </button>
+                )}
+              {catalogFailure.kind === 'authentication' &&
+                catalogFailure.provider === 'rawg' &&
+                catalogStatus.source === 'saved' && (
+                  <>
+                    <button
+                      type="button"
+                      className="quiet-button"
+                      onClick={() => setReplacingKey(true)}
+                    >
+                      Sustituir clave
+                    </button>
+                    <button
+                      type="button"
+                      className="danger-button"
+                      onClick={clearKey}
+                      disabled={busy}
+                    >
+                      Eliminar clave
+                    </button>
+                  </>
+                )}
+            </div>
+          </div>
+        )}
         {error && <p className="modal-error">{error}</p>}
       </section>
     </div>

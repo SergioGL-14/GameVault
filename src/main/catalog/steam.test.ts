@@ -73,8 +73,71 @@ describe('catálogo de Steam', () => {
 
   it('rechaza respuestas sin una ficha válida', async () => {
     const fetcher = vi.fn(async () => new Response(JSON.stringify({ '400': { success: false } })))
-    await expect(createSteamCatalog(fetcher as typeof fetch).getGame(400)).rejects.toThrow(
-      'ficha de juego válida'
+    await expect(createSteamCatalog(fetcher as typeof fetch).getGame(400)).rejects.toMatchObject({
+      failure: { provider: 'steam', kind: 'provider-response' }
+    })
+  })
+
+  it.each([
+    ['offline', new TypeError('fetch failed')],
+    ['timeout', Object.assign(new Error('aborted'), { name: 'TimeoutError' })]
+  ] as const)('clasifica un fallo %s sin exponer detalles de fetch', async (kind, reason) => {
+    const fetcher = vi.fn(async () => Promise.reject(reason))
+
+    await expect(
+      createSteamCatalog(fetcher as typeof fetch).search('Portal')
+    ).rejects.toMatchObject({ failure: { provider: 'steam', kind } })
+  })
+
+  it('clasifica JSON malformado como respuesta del proveedor', async () => {
+    const fetcher = vi.fn(async () => new Response('{'))
+
+    await expect(
+      createSteamCatalog(fetcher as typeof fetch).search('Portal')
+    ).rejects.toMatchObject({ failure: { provider: 'steam', kind: 'provider-response' } })
+  })
+
+  it('encapsula estructuras anidadas malformadas', async () => {
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ items: [null] })))
+
+    await expect(
+      createSteamCatalog(fetcher as typeof fetch).search('Portal')
+    ).rejects.toMatchObject({ failure: { provider: 'steam', kind: 'provider-response' } })
+  })
+
+  it('rechaza valores escalares y listas malformados', async () => {
+    const malformedSearch = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({ items: [{ type: 'app', id: 400, name: 'Portal', tiny_image: {} }] })
+        )
     )
+    await expect(
+      createSteamCatalog(malformedSearch as typeof fetch).search('Portal')
+    ).rejects.toMatchObject({ failure: { provider: 'steam', kind: 'provider-response' } })
+
+    const malformedDetail = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            '400': { success: true, data: { type: 'game', name: 'Portal', developers: [null] } }
+          })
+        )
+    )
+    await expect(
+      createSteamCatalog(malformedDetail as typeof fetch).getGame(400)
+    ).rejects.toMatchObject({ failure: { provider: 'steam', kind: 'provider-response' } })
+  })
+
+  it('rechaza identificadores y puntuaciones fuera del dominio', async () => {
+    for (const item of [
+      { type: 'app', id: 0, name: 'Portal', metascore: '90' },
+      { type: 'app', id: 400, name: 'Portal', metascore: '101' }
+    ]) {
+      const fetcher = vi.fn(async () => new Response(JSON.stringify({ items: [item] })))
+      await expect(
+        createSteamCatalog(fetcher as typeof fetch).search('Portal')
+      ).rejects.toMatchObject({ failure: { provider: 'steam', kind: 'provider-response' } })
+    }
   })
 })

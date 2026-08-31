@@ -66,10 +66,63 @@ describe('catálogo RAWG', () => {
   })
 
   it('rechaza búsquedas sin clave y respuestas de autenticación', async () => {
-    await expect(createRawgCatalog(() => null).search('Portal')).rejects.toThrow('Configura')
+    await expect(createRawgCatalog(() => null).search('Portal')).rejects.toMatchObject({
+      failure: { provider: 'rawg', kind: 'authentication' }
+    })
     const fetcher = vi.fn(async () => new Response(null, { status: 401 }))
     await expect(
       createRawgCatalog(() => 'wrong', fetcher as typeof fetch).search('Portal')
-    ).rejects.toThrow('rechazó')
+    ).rejects.toMatchObject({ failure: { provider: 'rawg', kind: 'authentication' } })
+  })
+
+  it('clasifica límites y respuestas malformadas sin filtrar HTTP al consumidor', async () => {
+    const limited = vi.fn(async () => new Response(null, { status: 429 }))
+    await expect(
+      createRawgCatalog(() => 'key', limited as typeof fetch).search('Portal')
+    ).rejects.toMatchObject({ failure: { provider: 'rawg', kind: 'rate-limit' } })
+
+    const malformed = vi.fn(async () => new Response(JSON.stringify({ unexpected: true })))
+    await expect(
+      createRawgCatalog(() => 'key', malformed as typeof fetch).search('Portal')
+    ).rejects.toMatchObject({ failure: { provider: 'rawg', kind: 'provider-response' } })
+  })
+
+  it('encapsula estructuras anidadas malformadas', async () => {
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ results: [null] })))
+
+    await expect(
+      createRawgCatalog(() => 'key', fetcher as typeof fetch).search('Portal')
+    ).rejects.toMatchObject({ failure: { provider: 'rawg', kind: 'provider-response' } })
+  })
+
+  it('rechaza valores escalares y listas malformados', async () => {
+    const malformedSearch = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ results: [{ id: 1, name: 'Portal', background_image: {} }] }))
+    )
+    await expect(
+      createRawgCatalog(() => 'key', malformedSearch as typeof fetch).search('Portal')
+    ).rejects.toMatchObject({ failure: { provider: 'rawg', kind: 'provider-response' } })
+
+    const malformedDetail = vi.fn(async (url: string | URL | Request) =>
+      String(url).includes('/screenshots')
+        ? new Response(JSON.stringify({ results: [] }))
+        : new Response(JSON.stringify({ id: 1, name: 'Portal', developers: [null] }))
+    )
+    await expect(
+      createRawgCatalog(() => 'key', malformedDetail as typeof fetch).getGame(1)
+    ).rejects.toMatchObject({ failure: { provider: 'rawg', kind: 'provider-response' } })
+  })
+
+  it('rechaza identificadores y puntuaciones fuera del dominio', async () => {
+    for (const game of [
+      { id: -1, name: 'Portal', metacritic: 90 },
+      { id: 1, name: 'Portal', metacritic: 101 }
+    ]) {
+      const fetcher = vi.fn(async () => new Response(JSON.stringify({ results: [game] })))
+      await expect(
+        createRawgCatalog(() => 'key', fetcher as typeof fetch).search('Portal')
+      ).rejects.toMatchObject({ failure: { provider: 'rawg', kind: 'provider-response' } })
+    }
   })
 })
