@@ -37,6 +37,12 @@ Steam's store search and app-detail endpoints currently work without authenticat
 
 More detail about both providers is in [`docs/catalog-api.md`](docs/catalog-api.md).
 
+## Accessibility
+
+Core navigation, library filters, game cards, forms, and dialogs support keyboard operation and expose their state to assistive technology. Modal dialogs contain focus, close with Escape, and return focus to their opener. Errors and asynchronous result updates use live announcements instead of relying on color alone.
+
+The repeatable keyboard and screen-reader smoke test is documented in [`docs/accessibility-checklist.md`](docs/accessibility-checklist.md).
+
 ## Run it locally
 
 Requirements:

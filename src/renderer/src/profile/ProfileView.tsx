@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import type { Game, LibraryStats, Profile } from '../../../library/model'
+import Modal from '../dialog/Modal'
 import { formatDuration } from '../format'
 import { STATUS_LABELS } from '../library/status-labels'
 
@@ -102,7 +103,9 @@ export default function ProfileView({
           </div>
           <div className="identity-copy">
             <p className="eyebrow">Perfil de GameVault</p>
-            <h1>{profile.displayName}</h1>
+            <h1 tabIndex={-1} data-view-heading>
+              {profile.displayName}
+            </h1>
             {profile.location && <span className="profile-location">⌖ {profile.location}</span>}
             <p>{profile.about || 'Una colección todavía por descubrir.'}</p>
           </div>
@@ -113,7 +116,14 @@ export default function ProfileView({
             <div>
               <strong>Nivel {level}</strong>
               <small>{stats.completed % 5} de 5 completados para subir</small>
-              <div className="level-track">
+              <div
+                className="level-track"
+                role="progressbar"
+                aria-label="Progreso hacia el siguiente nivel"
+                aria-valuemin={0}
+                aria-valuemax={5}
+                aria-valuenow={stats.completed % 5}
+              >
                 <span style={{ width: `${progress}%` }} />
               </div>
             </div>
@@ -124,10 +134,10 @@ export default function ProfileView({
         </header>
 
         <div className="profile-columns">
-          <main className="profile-primary">
+          <div className="profile-primary">
             <section className="profile-module year-summary">
               <header>
-                <span>Resumen de la colección</span>
+                <h2>Resumen de la colección</h2>
                 <small>Actualizado localmente</small>
               </header>
               <div className="summary-content">
@@ -151,9 +161,14 @@ export default function ProfileView({
                 </div>
                 <div className="summary-covers">
                   {games.slice(0, 5).map((game) => (
-                    <button key={game.id} type="button" onClick={() => onOpenGame(game)}>
+                    <button
+                      key={game.id}
+                      type="button"
+                      aria-label={game.title}
+                      onClick={() => onOpenGame(game)}
+                    >
                       {game.coverUrl ? (
-                        <img src={game.coverUrl} alt={game.title} />
+                        <img src={game.coverUrl} alt="" />
                       ) : (
                         <span>{game.title[0]}</span>
                       )}
@@ -165,7 +180,7 @@ export default function ProfileView({
 
             <section className="profile-module showcase-module">
               <header>
-                <span>Expositor destacado</span>
+                <h2>Expositor destacado</h2>
                 <small>{showcased.length} seleccionados</small>
               </header>
               {showcased.length ? (
@@ -193,7 +208,7 @@ export default function ProfileView({
 
             <section className="profile-module completed-module">
               <header>
-                <span>Completados recientemente</span>
+                <h2>Completados recientemente</h2>
                 <small>{stats.completed} en total</small>
               </header>
               {completed.length ? (
@@ -213,7 +228,7 @@ export default function ProfileView({
                 <p className="module-empty">Cuando completes un juego aparecerá aquí.</p>
               )}
             </section>
-          </main>
+          </div>
 
           <aside className="profile-sidebar">
             <section className="side-module collection-stats">
@@ -296,18 +311,25 @@ export default function ProfileView({
       </div>
 
       {editing && (
-        <div className="modal-backdrop" onClick={() => setEditing(false)}>
-          <form
-            className="edit-modal profile-editor"
-            onSubmit={saveProfile}
-            onClick={(event) => event.stopPropagation()}
-          >
+        <Modal
+          className="edit-modal profile-editor"
+          labelledBy="profile-modal-title"
+          onClose={() => setEditing(false)}
+          busy={saving}
+        >
+          <form onSubmit={saveProfile}>
             <header className="modal-header">
               <div>
                 <p className="eyebrow">Personalización</p>
-                <h2>Modificar perfil</h2>
+                <h2 id="profile-modal-title">Modificar perfil</h2>
               </div>
-              <button type="button" className="icon-btn" onClick={() => setEditing(false)}>
+              <button
+                type="button"
+                className="icon-btn"
+                onClick={() => setEditing(false)}
+                aria-label="Cerrar"
+                disabled={saving}
+              >
                 ×
               </button>
             </header>
@@ -315,6 +337,7 @@ export default function ProfileView({
               <span>Nombre</span>
               <input
                 value={displayName}
+                autoFocus
                 onChange={(event) => setDisplayName(event.target.value)}
                 required
               />
@@ -349,10 +372,19 @@ export default function ProfileView({
                 placeholder="https://…"
               />
             </label>
-            {profileError && <p className="modal-error">{profileError}</p>}
+            {profileError && (
+              <p className="modal-error" role="alert">
+                {profileError}
+              </p>
+            )}
             <footer className="modal-footer">
               <span className="spacer" />
-              <button type="button" className="quiet-button" onClick={() => setEditing(false)}>
+              <button
+                type="button"
+                className="quiet-button"
+                onClick={() => setEditing(false)}
+                disabled={saving}
+              >
                 Cancelar
               </button>
               <button type="submit" className="action-button" disabled={saving}>
@@ -360,7 +392,7 @@ export default function ProfileView({
               </button>
             </footer>
           </form>
-        </div>
+        </Modal>
       )}
     </section>
   )

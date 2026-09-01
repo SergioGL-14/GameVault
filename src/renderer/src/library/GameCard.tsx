@@ -8,7 +8,12 @@ interface GameCardProps {
 
 export default function GameCard({ game, onOpen }: GameCardProps): React.JSX.Element {
   return (
-    <button type="button" className="cover-card" onClick={() => onOpen(game)}>
+    <button
+      type="button"
+      className="cover-card"
+      data-game-id={game.id}
+      onClick={() => onOpen(game)}
+    >
       <div className="cover-art">
         <span className="cover-letter">{game.title.charAt(0).toUpperCase()}</span>
         {game.coverUrl ? (

@@ -30,3 +30,4 @@
 - Aligned Node.js type declarations with the supported Node.js 24 runtime.
 - Updated TypeScript to version 6 and removed the deprecated `baseUrl` compiler option.
 - Added provider-neutral catalog failures with actionable offline, timeout, retry, and RAWG credential recovery states.
+- Made core navigation, filters, game views, forms, errors, and dialogs keyboard and screen-reader accessible.

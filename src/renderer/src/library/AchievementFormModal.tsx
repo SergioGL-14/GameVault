@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import type { Achievement, AchievementInput } from '../../../library/model'
+import Modal from '../dialog/Modal'
 import { formatError } from '../format'
 
 interface AchievementFormModalProps {
@@ -47,18 +48,13 @@ export default function AchievementFormModal({
   }
 
   return (
-    <div className="modal-backdrop" onClick={requestClose}>
-      <form
-        className="edit-modal achievement-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="achievement-modal-title"
-        onSubmit={submit}
-        onClick={(event) => event.stopPropagation()}
-        onKeyDown={(event) => {
-          if (event.key === 'Escape') requestClose()
-        }}
-      >
+    <Modal
+      className="edit-modal achievement-modal"
+      labelledBy="achievement-modal-title"
+      onClose={requestClose}
+      busy={busy}
+    >
+      <form onSubmit={submit}>
         <header className="modal-header">
           <div>
             <p className="eyebrow">{gameTitle}</p>
@@ -122,7 +118,11 @@ export default function AchievementFormModal({
             />
           </label>
         </div>
-        {error && <p className="modal-error">{error}</p>}
+        {error && (
+          <p className="modal-error" role="alert">
+            {error}
+          </p>
+        )}
         <footer className="modal-footer">
           <span className="spacer" />
           <button type="button" className="quiet-button" onClick={requestClose} disabled={busy}>
@@ -133,6 +133,6 @@ export default function AchievementFormModal({
           </button>
         </footer>
       </form>
-    </div>
+    </Modal>
   )
 }

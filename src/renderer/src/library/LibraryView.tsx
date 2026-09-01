@@ -26,7 +26,9 @@ export default function LibraryView({ games, onAdd, onOpen }: LibraryViewProps):
       <header className="library-heading">
         <div>
           <p className="eyebrow">Colección personal</p>
-          <h1>Biblioteca</h1>
+          <h1 tabIndex={-1} data-view-heading>
+            Biblioteca
+          </h1>
           <p>{games.length} títulos guardados en este equipo</p>
         </div>
         <button type="button" className="action-button" onClick={onAdd}>
@@ -37,6 +39,7 @@ export default function LibraryView({ games, onAdd, onOpen }: LibraryViewProps):
       <div className="library-controls">
         <label className="search-box">
           <span aria-hidden>⌕</span>
+          <span className="visually-hidden">Buscar en la biblioteca</span>
           <input
             type="search"
             placeholder="Buscar en la biblioteca"
@@ -44,19 +47,22 @@ export default function LibraryView({ games, onAdd, onOpen }: LibraryViewProps):
             onChange={(event) => setQuery(event.target.value)}
           />
         </label>
-        <div className="library-filters" aria-label="Filtrar biblioteca">
+        <div className="library-filters" role="group" aria-label="Filtrar biblioteca por estado">
           {(['todos', ...GAME_STATUSES] as Filter[]).map((value) => (
             <button
               type="button"
               key={value}
               className={filter === value ? 'active' : ''}
+              aria-pressed={filter === value}
               onClick={() => setFilter(value)}
             >
               {value === 'todos' ? 'Todos' : STATUS_LABELS[value]}
             </button>
           ))}
         </div>
-        <span className="result-count">{visible.length} resultados</span>
+        <span className="result-count" role="status" aria-live="polite">
+          {visible.length} resultados
+        </span>
       </div>
 
       {visible.length ? (

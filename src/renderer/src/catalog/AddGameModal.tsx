@@ -6,6 +6,7 @@ import type {
   CatalogStatus
 } from '../../../catalog/model'
 import type { Game, GameInput } from '../../../library/model'
+import Modal from '../dialog/Modal'
 import { formatError, releaseYear } from '../format'
 import { catalogGameToInput } from '../library/game-input'
 import { catalogFailureMessage } from './catalog-failure'
@@ -31,6 +32,7 @@ export default function AddGameModal({ onAdd, onClose }: AddGameModalProps): Rea
   const [coverUrl, setCoverUrl] = useState('')
   const [description, setDescription] = useState('')
   const [busy, setBusy] = useState(false)
+  const [importing, setImporting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [catalogFailure, setCatalogFailure] = useState<CatalogFailure | null>(null)
   const [replacingKey, setReplacingKey] = useState(false)
@@ -100,6 +102,7 @@ export default function AddGameModal({ onAdd, onClose }: AddGameModalProps): Rea
 
   async function importGame(result: CatalogSearchResult): Promise<void> {
     setBusy(true)
+    setImporting(true)
     setError(null)
     setCatalogFailure(null)
     try {
@@ -107,12 +110,14 @@ export default function AddGameModal({ onAdd, onClose }: AddGameModalProps): Rea
       if (!detail.ok) {
         setCatalogFailure(detail.error)
         setBusy(false)
+        setImporting(false)
         return
       }
       await onAdd(catalogGameToInput(detail.value))
     } catch (reason) {
       setError(formatError(reason))
       setBusy(false)
+      setImporting(false)
     }
   }
 
@@ -170,235 +175,258 @@ export default function AddGameModal({ onAdd, onClose }: AddGameModalProps): Rea
         : null
 
   return (
-    <div className="modal-backdrop" onClick={requestClose}>
-      <section className="add-modal" onClick={(event) => event.stopPropagation()}>
-        <header className="modal-header">
-          <div>
-            <p className="eyebrow">Nueva incorporación</p>
-            <h2>Añadir a la biblioteca</h2>
-          </div>
-          <button
-            type="button"
-            className="icon-btn"
-            onClick={requestClose}
-            aria-label="Cerrar"
-            disabled={busy}
-          >
-            ×
-          </button>
-        </header>
-
-        <div className="modal-tabs">
-          <button
-            type="button"
-            className={mode === 'steam' ? 'active' : ''}
-            onClick={() => selectMode('steam')}
-            disabled={busy}
-          >
-            Steam
-          </button>
-          <button
-            type="button"
-            className={mode === 'rawg' ? 'active' : ''}
-            onClick={() => selectMode('rawg')}
-            disabled={busy}
-          >
-            RAWG <small>opcional</small>
-          </button>
-          <button
-            type="button"
-            className={mode === 'manual' ? 'active' : ''}
-            onClick={() => selectMode('manual')}
-            disabled={busy}
-          >
-            Entrada manual
-          </button>
+    <Modal
+      className="add-modal"
+      labelledBy="add-game-modal-title"
+      onClose={requestClose}
+      busy={busy}
+    >
+      <header className="modal-header">
+        <div>
+          <p className="eyebrow">Nueva incorporación</p>
+          <h2 id="add-game-modal-title">Añadir a la biblioteca</h2>
         </div>
+        <button
+          type="button"
+          className="icon-btn"
+          onClick={requestClose}
+          aria-label="Cerrar"
+          disabled={busy}
+        >
+          ×
+        </button>
+      </header>
 
-        {mode === 'rawg' && (!catalogStatus.configured || replacingKey) && (
-          <div className="catalog-setup">
-            <span className="setup-mark">R</span>
-            <div>
-              <h3>Conecta el catálogo de RAWG</h3>
-              <p>
-                Usa tu propia clave gratuita. Se cifra con la protección de credenciales de Windows
-                y nunca se expone al navegador de la aplicación.
-              </p>
-              <a href="https://rawg.io/login?forward=developer" target="_blank" rel="noreferrer">
-                Obtener clave gratuita ↗
-              </a>
-            </div>
-            <form onSubmit={saveKey}>
-              <label className="field catalog-key-field">
-                <span>Clave API de RAWG</span>
-                <input
-                  autoFocus={replacingKey}
-                  type="password"
-                  placeholder="Pega aquí tu API key"
-                  value={apiKey}
-                  onChange={(event) => setApiKey(event.target.value)}
-                  disabled={busy}
-                  required
-                />
-              </label>
-              <button type="submit" className="action-button" disabled={busy}>
-                Guardar y conectar
-              </button>
-            </form>
+      <div className="modal-tabs" role="group" aria-label="Fuente del juego">
+        <button
+          type="button"
+          className={mode === 'steam' ? 'active' : ''}
+          aria-pressed={mode === 'steam'}
+          onClick={() => selectMode('steam')}
+          disabled={busy}
+        >
+          Steam
+        </button>
+        <button
+          type="button"
+          className={mode === 'rawg' ? 'active' : ''}
+          aria-pressed={mode === 'rawg'}
+          onClick={() => selectMode('rawg')}
+          disabled={busy}
+        >
+          RAWG <small>opcional</small>
+        </button>
+        <button
+          type="button"
+          className={mode === 'manual' ? 'active' : ''}
+          aria-pressed={mode === 'manual'}
+          onClick={() => selectMode('manual')}
+          disabled={busy}
+        >
+          Entrada manual
+        </button>
+      </div>
+
+      {mode === 'rawg' && (!catalogStatus.configured || replacingKey) && (
+        <div className="catalog-setup">
+          <span className="setup-mark">R</span>
+          <div>
+            <h3>Conecta el catálogo de RAWG</h3>
+            <p>
+              Usa tu propia clave gratuita. Se cifra con la protección de credenciales de Windows y
+              nunca se expone al navegador de la aplicación.
+            </p>
+            <a href="https://rawg.io/login?forward=developer" target="_blank" rel="noreferrer">
+              Obtener clave gratuita ↗
+            </a>
           </div>
-        )}
-
-        {(mode === 'steam' || (mode === 'rawg' && catalogStatus.configured && !replacingKey)) && (
-          <>
-            <form className="catalog-search" onSubmit={search}>
+          <form onSubmit={saveKey}>
+            <label className="field catalog-key-field">
+              <span>Clave API de RAWG</span>
               <input
-                autoFocus
-                type="search"
-                placeholder={
-                  mode === 'steam'
-                    ? "Busca primero en Steam: Hollow Knight, Baldur's Gate…"
-                    : 'Busca juegos fuera de Steam en RAWG…'
-                }
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
+                autoFocus={replacingKey}
+                type="password"
+                placeholder="Pega aquí tu API key"
+                value={apiKey}
+                onChange={(event) => setApiKey(event.target.value)}
                 disabled={busy}
-                minLength={2}
                 required
               />
-              <button type="submit" className="action-button" disabled={busy}>
-                {busy ? 'Buscando…' : 'Buscar'}
+            </label>
+            <button type="submit" className="action-button" disabled={busy}>
+              Guardar y conectar
+            </button>
+          </form>
+        </div>
+      )}
+
+      {(mode === 'steam' || (mode === 'rawg' && catalogStatus.configured && !replacingKey)) && (
+        <>
+          <form className="catalog-search" onSubmit={search}>
+            <label className="visually-hidden" htmlFor="catalog-search">
+              Buscar en {mode === 'steam' ? 'Steam' : 'RAWG'}
+            </label>
+            <input
+              id="catalog-search"
+              autoFocus
+              type="search"
+              placeholder={
+                mode === 'steam'
+                  ? "Busca primero en Steam: Hollow Knight, Baldur's Gate…"
+                  : 'Busca juegos fuera de Steam en RAWG…'
+              }
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              disabled={busy}
+              minLength={2}
+              required
+            />
+            <button type="submit" className="action-button" disabled={busy}>
+              {busy ? (importing ? 'Importando…' : 'Buscando…') : 'Buscar'}
+            </button>
+          </form>
+          <div className="catalog-results" aria-busy={busy}>
+            {results.map((result) => (
+              <button
+                type="button"
+                className="catalog-result"
+                key={result.catalogId}
+                onClick={() => importGame(result)}
+                disabled={busy}
+              >
+                <div className="result-art">
+                  {result.coverUrl ? <img src={result.coverUrl} alt="" /> : <span>GV</span>}
+                </div>
+                <div>
+                  <strong>{result.title}</strong>
+                  <span>
+                    {releaseYear(result.releasedAt)} ·{' '}
+                    {result.platforms.slice(0, 3).join(', ') || 'Sin plataforma'}
+                  </span>
+                </div>
+                {result.metacritic != null && <em>{result.metacritic}</em>}
+                <b>＋</b>
               </button>
-            </form>
-            <div className="catalog-results">
-              {results.map((result) => (
+            ))}
+            {!results.length && !catalogFailure && (
+              <p className="catalog-placeholder">
+                {searched
+                  ? 'No se encontraron resultados. Prueba con otro título o usa una entrada manual.'
+                  : mode === 'steam'
+                    ? 'Steam es el catálogo principal y no requiere configuración. Busca un título para importar su ficha.'
+                    : 'Usa RAWG cuando un juego no esté en Steam. Tu progreso seguirá guardándose solo en este equipo.'}
+              </p>
+            )}
+          </div>
+          <p className="visually-hidden" role="status" aria-live="polite">
+            {busy
+              ? importing
+                ? 'Importando juego'
+                : `Buscando en ${mode === 'steam' ? 'Steam' : 'RAWG'}`
+              : searched
+                ? `${results.length} resultados encontrados`
+                : ''}
+          </p>
+          <footer className="catalog-footer">
+            <a
+              href={mode === 'steam' ? 'https://store.steampowered.com/' : 'https://rawg.io/'}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Datos e imágenes: {mode === 'steam' ? 'Steam' : 'RAWG'} ↗
+            </a>
+            {mode === 'rawg' && catalogStatus.source === 'saved' && (
+              <button type="button" className="text-button" onClick={clearKey} disabled={busy}>
+                Eliminar clave
+              </button>
+            )}
+          </footer>
+        </>
+      )}
+
+      {mode === 'manual' && (
+        <form className="manual-form" onSubmit={addManual}>
+          <label className="field">
+            <span>Título</span>
+            <input value={title} onChange={(event) => setTitle(event.target.value)} required />
+          </label>
+          <label className="field">
+            <span>URL de carátula (opcional)</span>
+            <input
+              type="url"
+              value={coverUrl}
+              onChange={(event) => setCoverUrl(event.target.value)}
+              placeholder="https://…"
+            />
+          </label>
+          <label className="field">
+            <span>Descripción (opcional)</span>
+            <textarea
+              rows={5}
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+            />
+          </label>
+          <div className="modal-footer">
+            <span className="spacer" />
+            <button type="button" className="quiet-button" onClick={requestClose} disabled={busy}>
+              Cancelar
+            </button>
+            <button type="submit" className="action-button" disabled={busy}>
+              Crear ficha
+            </button>
+          </div>
+        </form>
+      )}
+
+      {catalogFailure && (
+        <div className="catalog-failure" role="alert">
+          <strong>No se pudo completar la operación</strong>
+          <p>{failureMessage}</p>
+          <small>Tu biblioteca local sigue disponible.</small>
+          <div>
+            {mode !== 'manual' &&
+              !replacingKey &&
+              query.trim().length >= 2 &&
+              (mode === 'steam' || catalogStatus.configured) && (
                 <button
                   type="button"
-                  className="catalog-result"
-                  key={result.catalogId}
-                  onClick={() => importGame(result)}
+                  className="quiet-button"
+                  onClick={() => void performSearch()}
                   disabled={busy}
                 >
-                  <div className="result-art">
-                    {result.coverUrl ? <img src={result.coverUrl} alt="" /> : <span>GV</span>}
-                  </div>
-                  <div>
-                    <strong>{result.title}</strong>
-                    <span>
-                      {releaseYear(result.releasedAt)} ·{' '}
-                      {result.platforms.slice(0, 3).join(', ') || 'Sin plataforma'}
-                    </span>
-                  </div>
-                  {result.metacritic != null && <em>{result.metacritic}</em>}
-                  <b>＋</b>
-                </button>
-              ))}
-              {!results.length && !catalogFailure && (
-                <p className="catalog-placeholder">
-                  {searched
-                    ? 'No se encontraron resultados. Prueba con otro título o usa una entrada manual.'
-                    : mode === 'steam'
-                      ? 'Steam es el catálogo principal y no requiere configuración. Busca un título para importar su ficha.'
-                      : 'Usa RAWG cuando un juego no esté en Steam. Tu progreso seguirá guardándose solo en este equipo.'}
-                </p>
-              )}
-            </div>
-            <footer className="catalog-footer">
-              <a
-                href={mode === 'steam' ? 'https://store.steampowered.com/' : 'https://rawg.io/'}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Datos e imágenes: {mode === 'steam' ? 'Steam' : 'RAWG'} ↗
-              </a>
-              {mode === 'rawg' && catalogStatus.source === 'saved' && (
-                <button type="button" className="text-button" onClick={clearKey} disabled={busy}>
-                  Eliminar clave
+                  Reintentar búsqueda
                 </button>
               )}
-            </footer>
-          </>
-        )}
-
-        {mode === 'manual' && (
-          <form className="manual-form" onSubmit={addManual}>
-            <label className="field">
-              <span>Título</span>
-              <input value={title} onChange={(event) => setTitle(event.target.value)} required />
-            </label>
-            <label className="field">
-              <span>URL de carátula (opcional)</span>
-              <input
-                type="url"
-                value={coverUrl}
-                onChange={(event) => setCoverUrl(event.target.value)}
-                placeholder="https://…"
-              />
-            </label>
-            <label className="field">
-              <span>Descripción (opcional)</span>
-              <textarea
-                rows={5}
-                value={description}
-                onChange={(event) => setDescription(event.target.value)}
-              />
-            </label>
-            <div className="modal-footer">
-              <span className="spacer" />
-              <button type="button" className="quiet-button" onClick={requestClose} disabled={busy}>
-                Cancelar
-              </button>
-              <button type="submit" className="action-button" disabled={busy}>
-                Crear ficha
-              </button>
-            </div>
-          </form>
-        )}
-
-        {catalogFailure && (
-          <div className="catalog-failure" role="alert">
-            <strong>No se pudo completar la operación</strong>
-            <p>{failureMessage}</p>
-            <small>Tu biblioteca local sigue disponible.</small>
-            <div>
-              {mode !== 'manual' &&
-                !replacingKey &&
-                query.trim().length >= 2 &&
-                (mode === 'steam' || catalogStatus.configured) && (
+            {catalogFailure.kind === 'authentication' &&
+              catalogFailure.provider === 'rawg' &&
+              catalogStatus.source === 'saved' && (
+                <>
                   <button
                     type="button"
                     className="quiet-button"
-                    onClick={() => void performSearch()}
+                    onClick={() => setReplacingKey(true)}
+                  >
+                    Sustituir clave
+                  </button>
+                  <button
+                    type="button"
+                    className="danger-button"
+                    onClick={clearKey}
                     disabled={busy}
                   >
-                    Reintentar búsqueda
+                    Eliminar clave
                   </button>
-                )}
-              {catalogFailure.kind === 'authentication' &&
-                catalogFailure.provider === 'rawg' &&
-                catalogStatus.source === 'saved' && (
-                  <>
-                    <button
-                      type="button"
-                      className="quiet-button"
-                      onClick={() => setReplacingKey(true)}
-                    >
-                      Sustituir clave
-                    </button>
-                    <button
-                      type="button"
-                      className="danger-button"
-                      onClick={clearKey}
-                      disabled={busy}
-                    >
-                      Eliminar clave
-                    </button>
-                  </>
-                )}
-            </div>
+                </>
+              )}
           </div>
-        )}
-        {error && <p className="modal-error">{error}</p>}
-      </section>
-    </div>
+        </div>
+      )}
+      {error && (
+        <p className="modal-error" role="alert">
+          {error}
+        </p>
+      )}
+    </Modal>
   )
 }
