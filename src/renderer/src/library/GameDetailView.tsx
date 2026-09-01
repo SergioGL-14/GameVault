@@ -78,7 +78,9 @@ export default function GameDetailView({
           </div>
           <div className="hero-copy">
             <p className="eyebrow">{game.developers.join(' · ') || 'Ficha personal'}</p>
-            <h1>{game.title}</h1>
+            <h1 tabIndex={-1} data-view-heading>
+              {game.title}
+            </h1>
             <div className="detail-tags">
               {game.genres.map((genre) => (
                 <span key={genre}>{genre}</span>
@@ -94,6 +96,7 @@ export default function GameDetailView({
                 type="button"
                 className={`showcase-button ${game.showcased ? 'active' : ''}`}
                 onClick={() => onToggleShowcase(game)}
+                aria-pressed={game.showcased}
               >
                 ★ {game.showcased ? 'En el expositor' : 'Destacar'}
               </button>
@@ -103,7 +106,7 @@ export default function GameDetailView({
       </header>
 
       <div className="detail-layout">
-        <main className="detail-main">
+        <div className="detail-main">
           <section className="detail-section">
             <h2>Acerca del juego</h2>
             <p className="game-description">
@@ -111,14 +114,14 @@ export default function GameDetailView({
             </p>
           </section>
 
-          <section className="detail-section achievements-section">
+          <section className="detail-section achievements-section" aria-busy={achievementsLoading}>
             <div className="section-heading">
               <div>
                 <p className="eyebrow">Progreso personal</p>
                 <h2>Logros</h2>
               </div>
               <div className="achievement-heading-actions">
-                <strong>
+                <strong role="status" aria-live="polite" aria-atomic="true">
                   {unlockedCount} / {achievements.length}
                 </strong>
                 <button
@@ -131,11 +134,17 @@ export default function GameDetailView({
                 </button>
               </div>
             </div>
-            {achievementError && <p className="modal-error">{achievementError}</p>}
+            {achievementError && (
+              <p className="modal-error" role="alert">
+                {achievementError}
+              </p>
+            )}
             {achievementsLoading ? (
-              <p className="achievement-empty">Cargando logros…</p>
+              <p className="achievement-empty" role="status">
+                Cargando logros…
+              </p>
             ) : !achievementsLoaded ? (
-              <p className="achievement-empty">
+              <p className="achievement-empty" role="alert">
                 No se pudieron cargar los logros. Vuelve a abrir la ficha para reintentar.
               </p>
             ) : achievements.length ? (
@@ -219,7 +228,7 @@ export default function GameDetailView({
               <p>{game.notes}</p>
             </section>
           )}
-        </main>
+        </div>
 
         <aside className="detail-sidebar">
           <section className="personal-panel">

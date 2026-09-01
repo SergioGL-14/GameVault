@@ -51,6 +51,10 @@ function App(): React.JSX.Element {
   const [addOpen, setAddOpen] = useState(false)
   const [editGame, setEditGame] = useState<Game | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const contentRef = useRef<HTMLElement>(null)
+  const returnFocusRef = useRef<HTMLElement | null>(null)
+  const returnGameIdRef = useRef<number | null>(null)
+  const focusTargetRef = useRef<'heading' | 'return' | null>(null)
 
   const refresh = useCallback(async (): Promise<void> => {
     try {
@@ -107,7 +111,48 @@ function App(): React.JSX.Element {
 
   const selectedGame = games.find((game) => game.id === selectedGameId) ?? null
 
+  useEffect(() => {
+    const focusTarget = focusTargetRef.current
+    if (!focusTarget) return
+    focusTargetRef.current = null
+    if (focusTarget === 'return' && returnFocusRef.current?.isConnected) {
+      returnFocusRef.current.focus()
+      return
+    }
+    if (focusTarget === 'return' && returnGameIdRef.current !== null) {
+      const card = contentRef.current?.querySelector<HTMLElement>(
+        `[data-game-id="${returnGameIdRef.current}"]`
+      )
+      if (card) {
+        card.focus()
+        return
+      }
+    }
+    contentRef.current?.querySelector<HTMLElement>('[data-view-heading]')?.focus()
+  }, [selectedGame?.id, tab])
+
+  function clearGameSelection(): void {
+    achievementRevisionRef.current += 1
+    selectedGameIdRef.current = null
+    setSelectedGameId(null)
+    setAchievements([])
+    setAchievementsLoading(false)
+    setAchievementsLoaded(false)
+  }
+
+  function showTab(nextTab: Tab): void {
+    focusTargetRef.current = 'heading'
+    returnFocusRef.current = null
+    returnGameIdRef.current = null
+    setTab(nextTab)
+    clearGameSelection()
+  }
+
   function openGame(game: Game): void {
+    returnFocusRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null
+    returnGameIdRef.current = game.id
+    focusTargetRef.current = 'heading'
     setTab('biblioteca')
     setAchievements([])
     setAchievementsLoading(true)
@@ -118,17 +163,16 @@ function App(): React.JSX.Element {
   }
 
   function closeGame(): void {
-    achievementRevisionRef.current += 1
-    selectedGameIdRef.current = null
-    setSelectedGameId(null)
-    setAchievements([])
-    setAchievementsLoading(false)
-    setAchievementsLoaded(false)
+    focusTargetRef.current = 'return'
+    clearGameSelection()
   }
 
   async function createGame(input: GameInput): Promise<Game> {
     const created = await window.api.createGame(input)
     setAddOpen(false)
+    focusTargetRef.current = 'heading'
+    returnFocusRef.current = null
+    returnGameIdRef.current = null
     setAchievements([])
     setAchievementsLoading(true)
     setAchievementsLoaded(false)
@@ -149,12 +193,10 @@ function App(): React.JSX.Element {
     if (!window.confirm(`¿Eliminar "${game.title}" de tu biblioteca?`)) return
     await window.api.deleteGame(game.id)
     setEditGame(null)
-    achievementRevisionRef.current += 1
-    selectedGameIdRef.current = null
-    setSelectedGameId(null)
-    setAchievements([])
-    setAchievementsLoading(false)
-    setAchievementsLoaded(false)
+    focusTargetRef.current = 'heading'
+    returnFocusRef.current = null
+    returnGameIdRef.current = null
+    clearGameSelection()
     await refresh()
   }
 
@@ -221,14 +263,12 @@ function App(): React.JSX.Element {
 
   return (
     <div className="app">
-      <nav className="topbar">
+      <nav className="topbar" aria-label="Navegación principal">
         <button
           type="button"
           className="brand"
-          onClick={() => {
-            setTab('perfil')
-            closeGame()
-          }}
+          onClick={() => showTab('perfil')}
+          aria-label="Ir al perfil"
         >
           <span className="brand-mark">G</span>
           <span>GAMEVAULT</span>
@@ -237,20 +277,16 @@ function App(): React.JSX.Element {
           <button
             type="button"
             className={`tab ${tab === 'perfil' && !selectedGame ? 'active' : ''}`}
-            onClick={() => {
-              setTab('perfil')
-              closeGame()
-            }}
+            onClick={() => showTab('perfil')}
+            aria-current={tab === 'perfil' && !selectedGame ? 'page' : undefined}
           >
             PERFIL
           </button>
           <button
             type="button"
             className={`tab ${tab === 'biblioteca' ? 'active' : ''}`}
-            onClick={() => {
-              setTab('biblioteca')
-              closeGame()
-            }}
+            onClick={() => showTab('biblioteca')}
+            aria-current={tab === 'biblioteca' ? 'page' : undefined}
           >
             BIBLIOTECA
           </button>
@@ -262,7 +298,7 @@ function App(): React.JSX.Element {
       </nav>
 
       {error && (
-        <div className="error-banner">
+        <div className="error-banner" role="alert">
           <span>{error}</span>
           <button type="button" onClick={() => setError(null)} aria-label="Cerrar">
             ×
@@ -270,7 +306,7 @@ function App(): React.JSX.Element {
         </div>
       )}
 
-      <main className="content">
+      <main className="content" ref={contentRef}>
         {selectedGame ? (
           <GameDetailView
             game={selectedGame}

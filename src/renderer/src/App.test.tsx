@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import axe from 'axe-core'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { GameVaultApi } from '../../desktop-api'
 import type { Achievement, AchievementInput, Game, GameInput } from '../../library/model'
@@ -143,6 +144,16 @@ async function openAddGameModal(api: GameVaultApi): Promise<void> {
   fireEvent.click(screen.getByRole('button', { name: 'Añadir primer juego' }))
 }
 
+async function expectNoAccessibilityViolations(): Promise<void> {
+  const result = await axe.run(document.body, {
+    // jsdom does not calculate layout or rendered colors.
+    rules: { 'color-contrast': { enabled: false } }
+  })
+  expect(
+    result.violations.map(({ id, nodes }) => ({ id, targets: nodes.map((node) => node.target) }))
+  ).toEqual([])
+}
+
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
@@ -150,6 +161,105 @@ afterEach(() => {
 
 beforeEach(() => {
   vi.spyOn(window, 'confirm').mockReturnValue(true)
+  HTMLDialogElement.prototype.showModal = function showModal(): void {
+    this.setAttribute('open', '')
+    this.querySelector<HTMLElement>('[autofocus]')?.focus()
+  }
+  HTMLDialogElement.prototype.close = function close(): void {
+    this.removeAttribute('open')
+  }
+})
+
+describe('core accessibility', () => {
+  it('exposes navigation, search, filters, and the current view', async () => {
+    const api = createApi([game])
+    await renderLibrary(api)
+
+    expect(screen.getByRole('navigation', { name: 'Navegación principal' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'BIBLIOTECA' }).getAttribute('aria-current')).toBe(
+      'page'
+    )
+    expect(screen.getByRole('searchbox', { name: 'Buscar en la biblioteca' })).toBeTruthy()
+    const filters = screen.getByRole('group', { name: 'Filtrar biblioteca por estado' })
+    expect(filters.querySelectorAll('button')).toHaveLength(6)
+    const allFilter = screen.getByRole('button', { name: 'Todos' })
+    expect(allFilter.getAttribute('aria-pressed')).toBe('true')
+    fireEvent.click(screen.getByRole('button', { name: 'Pendiente' }))
+    expect(screen.getByRole('button', { name: 'Pendiente' }).getAttribute('aria-pressed')).toBe(
+      'true'
+    )
+    expect(document.querySelectorAll('main')).toHaveLength(1)
+  })
+
+  it('opens a named modal, focuses it, closes on cancel, and restores focus', async () => {
+    const api = createApi()
+    await renderLibrary(api)
+    const opener = screen.getByRole('button', { name: 'Añadir primer juego' })
+    opener.focus()
+    fireEvent.click(opener)
+
+    const dialog = screen.getByRole('dialog', { name: 'Añadir a la biblioteca' })
+    expect(dialog.hasAttribute('open')).toBe(true)
+    expect(document.activeElement).toBe(screen.getByRole('searchbox', { name: 'Buscar en Steam' }))
+    fireEvent(dialog, new Event('cancel', { cancelable: true }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(document.activeElement).toBe(opener)
+  })
+
+  it('moves focus into a game and restores the originating card', async () => {
+    const api = createApi([game])
+    await renderLibrary(api)
+    const card = await screen.findByRole('button', { name: /Celeste/ })
+    card.focus()
+    fireEvent.click(card)
+
+    const heading = await screen.findByRole('heading', { name: 'Celeste', level: 1 })
+    await waitFor(() => expect(document.activeElement).toBe(heading))
+    fireEvent.click(screen.getByRole('button', { name: '← Biblioteca' }))
+
+    const restoredCard = await screen.findByRole('button', { name: /Celeste/ })
+    await waitFor(() => expect(document.activeElement).toBe(restoredCard))
+  })
+
+  it('names the profile editor dialog', async () => {
+    const api = createApi()
+    window.api = api
+    render(<App />)
+    await waitFor(() => expect(api.listGames).toHaveBeenCalled())
+    fireEvent.click(screen.getByRole('button', { name: 'Modificar perfil' }))
+
+    expect(screen.getByRole('dialog', { name: 'Modificar perfil' })).toBeTruthy()
+    expect(document.activeElement).toBe(screen.getByLabelText('Nombre'))
+  })
+
+  it('announces asynchronous form failures as alerts', async () => {
+    const api = createApi()
+    vi.mocked(api.createGame).mockRejectedValueOnce(new Error('No se pudo crear el juego'))
+    await openAddGameModal(api)
+    fireEvent.click(screen.getByRole('button', { name: 'Entrada manual' }))
+    fireEvent.change(screen.getByLabelText('Título'), { target: { value: 'Hades' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Crear ficha' }))
+
+    expect((await screen.findByRole('alert')).textContent).toContain('No se pudo crear el juego')
+  })
+
+  it('passes automated checks in representative profile, library, detail, and modal states', async () => {
+    const api = createApi([game])
+    window.api = api
+    render(<App />)
+    await waitFor(() => expect(api.listGames).toHaveBeenCalled())
+    await expectNoAccessibilityViolations()
+
+    fireEvent.click(screen.getByRole('button', { name: 'BIBLIOTECA' }))
+    await expectNoAccessibilityViolations()
+
+    fireEvent.click(await screen.findByRole('button', { name: /Celeste/ }))
+    await expectNoAccessibilityViolations()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Editar mi ficha' }))
+    await expectNoAccessibilityViolations()
+  })
 })
 
 describe('critical library flows', () => {
@@ -354,6 +464,33 @@ describe('catalog recovery flows', () => {
     )
 
     await act(async () => finishSearch?.({ ok: true, value: [] }))
+  })
+
+  it('announces an import without describing it as a search', async () => {
+    const api = createApi()
+    vi.mocked(api.searchCatalog).mockResolvedValueOnce({
+      ok: true,
+      value: [
+        {
+          source: 'steam',
+          catalogId: 400,
+          title: 'Portal',
+          coverUrl: null,
+          releasedAt: null,
+          platforms: ['Windows'],
+          metacritic: 90
+        }
+      ]
+    })
+    vi.mocked(api.getCatalogGame).mockReturnValueOnce(new Promise(() => undefined))
+    await openAddGameModal(api)
+    fireEvent.change(screen.getByPlaceholderText(/Busca primero en Steam/), {
+      target: { value: 'Portal' }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Buscar' }))
+    fireEvent.click(await screen.findByRole('button', { name: /Portal/ }))
+
+    expect(screen.getByText('Importando juego').getAttribute('role')).toBe('status')
   })
 })
 

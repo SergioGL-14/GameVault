@@ -12,8 +12,8 @@
   --purple: #b98cff;
   --red: #e45f6b;
   --text: #d7e0ed;
-  --muted: #8b9ab4;
-  --dim: #5f6d86;
+  --muted: #aab7cc;
+  --dim: #8998b1;
 }
 
 * {
@@ -58,6 +58,27 @@ a {
 
 a:hover {
   color: white;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+[tabindex='-1']:focus-visible {
+  outline: 3px solid #8fddff;
+  outline-offset: 3px;
 }
 
 .app {
@@ -304,6 +325,15 @@ a:hover {
   background: transparent;
 }
 
+.search-box:focus-within {
+  border-color: #8fddff;
+  box-shadow: 0 0 0 2px rgba(143, 221, 255, 0.25);
+}
+
+.search-box input:focus-visible {
+  outline: 0;
+}
+
 .library-filters {
   display: flex;
   gap: 4px;
@@ -312,7 +342,7 @@ a:hover {
 .library-filters button {
   padding: 7px 10px;
   border: 0;
-  color: #7f8da5;
+  color: #a1aec2;
   background: transparent;
   font-size: 12px;
 }
@@ -325,7 +355,7 @@ a:hover {
 
 .result-count {
   margin-left: auto;
-  color: #586982;
+  color: #91a0b8;
   font-size: 12px;
   white-space: nowrap;
 }
@@ -352,7 +382,8 @@ a:hover {
     box-shadow 130ms ease;
 }
 
-.cover-card:hover {
+.cover-card:hover,
+.cover-card:focus-visible {
   z-index: 2;
   transform: translateY(-4px) scale(1.025);
   border-color: #4d92c2;
@@ -375,7 +406,8 @@ a:hover {
   transition: transform 220ms ease;
 }
 
-.cover-card:hover .cover-art img {
+.cover-card:hover .cover-art img,
+.cover-card:focus-visible .cover-art img {
   transform: scale(1.04);
 }
 
@@ -1060,6 +1092,13 @@ a:hover {
   font-size: 14px;
 }
 
+.profile-module > header h2 {
+  margin: 0;
+  color: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+}
+
 .profile-module > header small {
   color: #bac2dc;
   font-size: 10px;
@@ -1331,13 +1370,12 @@ a:hover {
 }
 
 /* Modals */
-.modal-backdrop {
-  position: fixed;
-  z-index: 100;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  padding: 24px;
+.modal-dialog {
+  margin: auto;
+  color: var(--text);
+}
+
+.modal-dialog::backdrop {
   background: rgba(2, 5, 10, 0.82);
   backdrop-filter: blur(7px);
 }
@@ -1351,6 +1389,10 @@ a:hover {
   background: #172135;
   border: 1px solid #354560;
   box-shadow: 0 30px 90px rgba(0, 0, 0, 0.75);
+}
+
+.modal-dialog form {
+  margin: 0;
 }
 
 .edit-modal {
@@ -1391,7 +1433,7 @@ a:hover {
 }
 
 .modal-tabs small {
-  color: #66758d;
+  color: #9aa9c0;
   font-size: 9px;
 }
 
@@ -1522,7 +1564,7 @@ select:focus {
 
 .catalog-result span {
   margin-top: 4px;
-  color: #7888a2;
+  color: #9aa9c0;
   font-size: 11px;
 }
 
@@ -1545,7 +1587,7 @@ select:focus {
 .catalog-placeholder {
   max-width: 470px;
   margin: auto;
-  color: #6f7d94;
+  color: #9aa8bc;
   line-height: 1.6;
   text-align: center;
 }
@@ -1592,7 +1634,7 @@ select:focus {
 .text-button {
   padding: 0;
   border: 0;
-  color: #7b8aa4;
+  color: #9aa9c0;
   background: none;
 }
 
@@ -1693,8 +1735,9 @@ select:focus {
     grid-template-columns: repeat(4, 1fr);
   }
 
-  .library-filters button:nth-last-child(-n + 2) {
-    display: none;
+  .library-controls,
+  .library-filters {
+    flex-wrap: wrap;
   }
 }
 
@@ -1723,10 +1766,6 @@ select:focus {
 
   .search-box {
     width: 100%;
-  }
-
-  .result-count {
-    display: none;
   }
 
   .cover-wall {

@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { GAME_STATUSES, type Game, type GameStatus } from '../../../library/model'
+import Modal from '../dialog/Modal'
 import { formatError } from '../format'
 import { gameToInput } from './game-input'
 import { STATUS_LABELS } from './status-labels'
@@ -61,21 +62,32 @@ export default function GameFormModal({
   }
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <form className="edit-modal" onSubmit={submit} onClick={(event) => event.stopPropagation()}>
+    <Modal className="edit-modal" labelledBy="game-modal-title" onClose={onClose} busy={busy}>
+      <form onSubmit={submit}>
         <header className="modal-header">
           <div>
             <p className="eyebrow">Ficha personal</p>
-            <h2>{game.title}</h2>
+            <h2 id="game-modal-title">{game.title}</h2>
           </div>
-          <button type="button" className="icon-btn" onClick={onClose} aria-label="Cerrar">
+          <button
+            type="button"
+            className="icon-btn"
+            onClick={onClose}
+            aria-label="Cerrar"
+            disabled={busy}
+          >
             ×
           </button>
         </header>
         <div className="edit-form-grid">
           <label className="field field-wide">
             <span>Título</span>
-            <input value={title} onChange={(event) => setTitle(event.target.value)} required />
+            <input
+              autoFocus
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
+              required
+            />
           </label>
           <label className="field">
             <span>Estado</span>
@@ -132,13 +144,17 @@ export default function GameFormModal({
             Destacar este juego en el perfil
           </label>
         </div>
-        {error && <p className="modal-error">{error}</p>}
+        {error && (
+          <p className="modal-error" role="alert">
+            {error}
+          </p>
+        )}
         <footer className="modal-footer">
           <button type="button" className="danger-button" onClick={remove} disabled={busy}>
             Eliminar de la biblioteca
           </button>
           <span className="spacer" />
-          <button type="button" className="quiet-button" onClick={onClose}>
+          <button type="button" className="quiet-button" onClick={onClose} disabled={busy}>
             Cancelar
           </button>
           <button type="submit" className="action-button" disabled={busy}>
@@ -146,6 +162,6 @@ export default function GameFormModal({
           </button>
         </footer>
       </form>
-    </div>
+    </Modal>
   )
 }
