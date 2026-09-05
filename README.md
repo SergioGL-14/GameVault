@@ -101,7 +101,7 @@ Planned deliveries are tracked in [`ROADMAP.md`](ROADMAP.md) and mirrored in [Gi
 
 - Achievements are managed manually; provider synchronization and rarity data are not implemented.
 - Store-account imports (Steam library, Epic, itch.io, and others) are not implemented; games are added one at a time.
-- Local image copies are retained when an image is replaced or removed; automatic cleanup is not implemented yet because references may be shared.
+- Local image copies are retained when an edit is cancelled or an image is replaced or removed. Automatic cleanup is not implemented yet because references may be shared; safe cleanup requires checking every stored reference first.
 - RAWG remains a bring-your-own-key option until the project has its own backend.
 - The current UI has one Spanish localization rather than a full translation system.
 
