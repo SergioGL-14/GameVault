@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { Achievement, AchievementInput, Game } from '../../../library/model'
 import { formatDuration, releaseYear } from '../format'
+import ImageWithFallback from '../image/ImageWithFallback'
 import AchievementFormModal from './AchievementFormModal'
 import { STATUS_LABELS } from './status-labels'
 
@@ -71,7 +72,11 @@ export default function GameDetailView({
         <div className="hero-content">
           <div className="detail-cover">
             {game.coverUrl ? (
-              <img src={game.coverUrl} alt={`Portada de ${game.title}`} />
+              <ImageWithFallback
+                src={game.coverUrl}
+                alt={`Portada de ${game.title}`}
+                fallback={<span>{game.title.charAt(0)}</span>}
+              />
             ) : (
               <span>{game.title.charAt(0)}</span>
             )}

@@ -8,6 +8,7 @@ import type {
 import type { Game, GameInput } from '../../../library/model'
 import Modal from '../dialog/Modal'
 import { formatError, releaseYear } from '../format'
+import ImageWithFallback from '../image/ImageWithFallback'
 import { catalogGameToInput } from '../library/game-input'
 import { catalogFailureMessage } from './catalog-failure'
 
@@ -33,6 +34,7 @@ export default function AddGameModal({ onAdd, onClose }: AddGameModalProps): Rea
   const [description, setDescription] = useState('')
   const [busy, setBusy] = useState(false)
   const [importing, setImporting] = useState(false)
+  const [selectingImage, setSelectingImage] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [catalogFailure, setCatalogFailure] = useState<CatalogFailure | null>(null)
   const [replacingKey, setReplacingKey] = useState(false)
@@ -135,6 +137,21 @@ export default function AddGameModal({ onAdd, onClose }: AddGameModalProps): Rea
       })
     } catch (reason) {
       setError(formatError(reason))
+      setBusy(false)
+    }
+  }
+
+  async function selectCover(): Promise<void> {
+    setBusy(true)
+    setSelectingImage(true)
+    setError(null)
+    try {
+      const selected = await window.api.selectLocalImage()
+      if (selected !== null) setCoverUrl(selected)
+    } catch (reason) {
+      setError(formatError(reason))
+    } finally {
+      setSelectingImage(false)
       setBusy(false)
     }
   }
@@ -295,7 +312,11 @@ export default function AddGameModal({ onAdd, onClose }: AddGameModalProps): Rea
                 disabled={busy}
               >
                 <div className="result-art">
-                  {result.coverUrl ? <img src={result.coverUrl} alt="" /> : <span>GV</span>}
+                  {result.coverUrl ? (
+                    <ImageWithFallback src={result.coverUrl} alt="" fallback={<span>GV</span>} />
+                  ) : (
+                    <span>GV</span>
+                  )}
                 </div>
                 <div>
                   <strong>{result.title}</strong>
@@ -345,26 +366,55 @@ export default function AddGameModal({ onAdd, onClose }: AddGameModalProps): Rea
       )}
 
       {mode === 'manual' && (
-        <form className="manual-form" onSubmit={addManual}>
+        <form className="manual-form" onSubmit={addManual} aria-busy={busy}>
           <label className="field">
             <span>Título</span>
-            <input value={title} onChange={(event) => setTitle(event.target.value)} required />
-          </label>
-          <label className="field">
-            <span>URL de carátula (opcional)</span>
             <input
-              type="url"
-              value={coverUrl}
-              onChange={(event) => setCoverUrl(event.target.value)}
-              placeholder="https://…"
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
+              disabled={busy}
+              required
             />
           </label>
+          <div className="image-field">
+            <label className="field">
+              <span>URL de carátula (opcional)</span>
+              <input
+                type="url"
+                value={coverUrl}
+                onChange={(event) => setCoverUrl(event.target.value)}
+                placeholder="https://…"
+                disabled={busy}
+              />
+            </label>
+            <div className="image-actions">
+              <button
+                type="button"
+                className="quiet-button"
+                aria-label="Elegir archivo para la carátula"
+                onClick={() => void selectCover()}
+                disabled={busy}
+              >
+                {selectingImage ? 'Eligiendo…' : 'Elegir archivo'}
+              </button>
+              <button
+                type="button"
+                className="text-button"
+                aria-label="Quitar carátula"
+                onClick={() => setCoverUrl('')}
+                disabled={busy || !coverUrl}
+              >
+                Quitar imagen
+              </button>
+            </div>
+          </div>
           <label className="field">
             <span>Descripción (opcional)</span>
             <textarea
               rows={5}
               value={description}
               onChange={(event) => setDescription(event.target.value)}
+              disabled={busy}
             />
           </label>
           <div className="modal-footer">

@@ -7,6 +7,7 @@ import {
 } from './validation'
 
 const game = { title: 'Celeste', status: 'pendiente' } as const
+const managedImage = 'gamevault-image://local/123e4567-e89b-42d3-a456-426614174000.png'
 
 describe('game validation', () => {
   it.each([
@@ -64,6 +65,16 @@ describe('game validation', () => {
     )
     expect(() => validateGameInput({ ...game, coverUrl: `${maxUrl}a` })).toThrow(ValidationError)
   })
+
+  it('accepts managed artwork only in game image fields', () => {
+    expect(() =>
+      validateGameInput({ ...game, coverUrl: managedImage, backgroundUrl: managedImage })
+    ).not.toThrow()
+    expect(() => validateGameInput({ ...game, website: managedImage })).toThrow(ValidationError)
+    expect(() => validateGameInput({ ...game, screenshots: [managedImage] })).toThrow(
+      ValidationError
+    )
+  })
 })
 
 describe('achievement validation', () => {
@@ -86,6 +97,7 @@ describe('achievement validation', () => {
     { name: 'Primer paso', unlocked: 'no' },
     { name: 'Primer paso', unlocked: false, iconUrl: 'file:///secret.png' },
     { name: 'Primer paso', unlocked: false, iconUrl: 'http://images.example/icon.png' },
+    { name: 'Primer paso', unlocked: false, iconUrl: managedImage },
     { name: 'Primer paso', unlocked: true, unlockedAt: '2026-02-30' },
     { name: 'Primer paso', unlocked: false, unlockedAt: '2026-08-31' }
   ])('rejects invalid achievement input', (input) => {
@@ -113,5 +125,11 @@ describe('profile validation', () => {
     expect(() =>
       validateProfileInput({ ...profile, avatarUrl: 'https://user@example.com/avatar.jpg' })
     ).toThrow(ValidationError)
+  })
+
+  it('accepts managed profile images', () => {
+    expect(() =>
+      validateProfileInput({ ...profile, avatarUrl: managedImage, backgroundUrl: managedImage })
+    ).not.toThrow()
   })
 })

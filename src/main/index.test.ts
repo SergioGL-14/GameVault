@@ -1,4 +1,5 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { join } from 'path'
 
 const mocks = vi.hoisted(() => {
   const window = {
@@ -24,12 +25,30 @@ const mocks = vi.hoisted(() => {
     quit: vi.fn(),
     readyCallback: undefined as (() => void) | undefined,
     openExternal: vi.fn(() => Promise.resolve()),
+    showOpenDialog: vi.fn<() => Promise<{ canceled: boolean; filePaths: string[] }>>(() =>
+      Promise.resolve({ canceled: true, filePaths: [] })
+    ),
     showErrorBox: vi.fn(),
+    registerSchemesAsPrivileged: vi.fn(),
+    protocolHandle: vi.fn(),
     setAppUserModelId: vi.fn(),
     watchWindowShortcuts: vi.fn(),
     openDatabase: vi.fn(() => ({ database: true })),
-    registerIpc: vi.fn(),
-    createLibraryRepository: vi.fn(() => ({ repository: true }))
+    registerIpc:
+      vi.fn<
+        (
+          repo: unknown,
+          steamCatalog: unknown,
+          rawgCatalog: unknown,
+          catalogKey: unknown,
+          selectLocalImage: () => Promise<string | null>
+        ) => void
+      >(),
+    createLibraryRepository: vi.fn(() => ({ repository: true })),
+    createManagedImageRequestHandler: vi.fn(() => vi.fn()),
+    selectManagedImage: vi.fn<
+      (directory: string, pickFile: () => Promise<string | null>) => Promise<string | null>
+    >(() => Promise.resolve(null))
   }
 })
 
@@ -45,7 +64,11 @@ vi.mock('electron', () => ({
     quit: mocks.quit
   },
   BrowserWindow: mocks.BrowserWindow,
-  dialog: { showErrorBox: mocks.showErrorBox },
+  dialog: { showErrorBox: mocks.showErrorBox, showOpenDialog: mocks.showOpenDialog },
+  protocol: {
+    registerSchemesAsPrivileged: mocks.registerSchemesAsPrivileged,
+    handle: mocks.protocolHandle
+  },
   safeStorage: {
     isEncryptionAvailable: vi.fn(() => true),
     getSelectedStorageBackend: vi.fn(() => 'unknown'),
@@ -68,9 +91,19 @@ vi.mock('./ipc', () => ({ registerIpc: mocks.registerIpc }))
 vi.mock('./catalog/rawg-key-store', () => ({ createCatalogKeyStore: vi.fn(() => ({})) }))
 vi.mock('./catalog/rawg', () => ({ createRawgCatalog: vi.fn(() => ({})) }))
 vi.mock('./catalog/steam', () => ({ createSteamCatalog: vi.fn(() => ({})) }))
+vi.mock('./images/managed-images', () => ({
+  createManagedImageRequestHandler: mocks.createManagedImageRequestHandler,
+  selectManagedImage: mocks.selectManagedImage
+}))
 
 beforeAll(async () => {
   await import('./index')
+  expect(mocks.registerSchemesAsPrivileged).toHaveBeenCalledWith([
+    {
+      scheme: 'gamevault-image',
+      privileges: { secure: true, standard: true, supportFetchAPI: true }
+    }
+  ])
 })
 
 beforeEach(() => {
@@ -84,6 +117,8 @@ describe('inicio seguro de la aplicación', () => {
     mocks.readyCallback?.()
 
     expect(mocks.setAppUserModelId).toHaveBeenCalledWith('com.sergiogl14.gamevault')
+    expect(mocks.createManagedImageRequestHandler).toHaveBeenCalledWith(join('user-data', 'images'))
+    expect(mocks.protocolHandle).toHaveBeenCalledWith('gamevault-image', expect.any(Function))
     expect(mocks.BrowserWindow).toHaveBeenCalledWith(
       expect.objectContaining({
         webPreferences: expect.objectContaining({
@@ -111,6 +146,25 @@ describe('inicio seguro de la aplicación', () => {
       'No se pudo abrir el enlace',
       expect.stringContaining('navegador del sistema')
     )
+  })
+
+  it('limits local image selection to a native image picker', async () => {
+    mocks.readyCallback?.()
+    const selectLocalImage = mocks.registerIpc.mock.calls[0][4]
+    mocks.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: ['cover.png'] })
+
+    await selectLocalImage()
+
+    expect(mocks.selectManagedImage).toHaveBeenCalledWith(
+      join('user-data', 'images'),
+      expect.any(Function)
+    )
+    const pickFile = mocks.selectManagedImage.mock.calls[0][1]
+    await expect(pickFile()).resolves.toBe('cover.png')
+    expect(mocks.showOpenDialog).toHaveBeenCalledWith({
+      properties: ['openFile'],
+      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp'] }]
+    })
   })
 
   it('muestra el fallo de base de datos en español y sale sin continuar', () => {

@@ -16,6 +16,7 @@ import type {
 } from './library/model'
 
 export const IPC = {
+  selectLocalImage: 'images:select-local',
   listGames: 'games:list',
   createGame: 'games:create',
   updateGame: 'games:update',
@@ -35,6 +36,7 @@ export const IPC = {
 } as const
 
 export interface GameVaultApi {
+  selectLocalImage: () => Promise<string | null>
   listGames: () => Promise<Game[]>
   createGame: (input: GameInput) => Promise<Game>
   updateGame: (id: number, input: GameInput) => Promise<Game>

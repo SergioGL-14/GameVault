@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from 'react'
 import type { Game, LibraryStats, Profile } from '../../../library/model'
 import Modal from '../dialog/Modal'
-import { formatDuration } from '../format'
+import { formatDuration, formatError } from '../format'
+import ImageWithFallback from '../image/ImageWithFallback'
 import { STATUS_LABELS } from '../library/status-labels'
 
 interface ProfileViewProps {
@@ -30,6 +31,7 @@ export default function ProfileView({
   const [avatarUrl, setAvatarUrl] = useState('')
   const [backgroundUrl, setBackgroundUrl] = useState('')
   const [saving, setSaving] = useState(false)
+  const [selectingImage, setSelectingImage] = useState<'avatar' | 'background' | null>(null)
   const [profileError, setProfileError] = useState<string | null>(null)
   const showcased = games.filter((game) => game.showcased)
   const completed = games
@@ -74,8 +76,26 @@ export default function ProfileView({
       })
       setEditing(false)
     } catch (reason) {
-      setProfileError(reason instanceof Error ? reason.message : String(reason))
+      setProfileError(formatError(reason))
     } finally {
+      setSaving(false)
+    }
+  }
+
+  async function selectImage(
+    kind: 'avatar' | 'background',
+    setImage: (url: string) => void
+  ): Promise<void> {
+    setSaving(true)
+    setSelectingImage(kind)
+    setProfileError(null)
+    try {
+      const selected = await window.api.selectLocalImage()
+      if (selected !== null) setImage(selected)
+    } catch (reason) {
+      setProfileError(formatError(reason))
+    } finally {
+      setSelectingImage(null)
       setSaving(false)
     }
   }
@@ -96,7 +116,11 @@ export default function ProfileView({
         <header className="profile-identity">
           <div className="profile-avatar">
             {profile.avatarUrl ? (
-              <img src={profile.avatarUrl} alt={`Avatar de ${profile.displayName}`} />
+              <ImageWithFallback
+                src={profile.avatarUrl}
+                alt={`Avatar de ${profile.displayName}`}
+                fallback={<span>{profile.displayName.slice(0, 2).toUpperCase()}</span>}
+              />
             ) : (
               <span>{profile.displayName.slice(0, 2).toUpperCase()}</span>
             )}
@@ -168,7 +192,11 @@ export default function ProfileView({
                       onClick={() => onOpenGame(game)}
                     >
                       {game.coverUrl ? (
-                        <img src={game.coverUrl} alt="" />
+                        <ImageWithFallback
+                          src={game.coverUrl}
+                          alt=""
+                          fallback={<span>{game.title[0]}</span>}
+                        />
                       ) : (
                         <span>{game.title[0]}</span>
                       )}
@@ -189,7 +217,11 @@ export default function ProfileView({
                     <button key={game.id} type="button" onClick={() => onOpenGame(game)}>
                       <div>
                         {game.coverUrl ? (
-                          <img src={game.coverUrl} alt="" />
+                          <ImageWithFallback
+                            src={game.coverUrl}
+                            alt=""
+                            fallback={<span>{game.title[0]}</span>}
+                          />
                         ) : (
                           <span>{game.title[0]}</span>
                         )}
@@ -216,7 +248,11 @@ export default function ProfileView({
                   {completed.map((game) => (
                     <button key={game.id} type="button" onClick={() => onOpenGame(game)}>
                       {game.coverUrl ? (
-                        <img src={game.coverUrl} alt="" />
+                        <ImageWithFallback
+                          src={game.coverUrl}
+                          alt=""
+                          fallback={<span>{game.title[0]}</span>}
+                        />
                       ) : (
                         <span>{game.title[0]}</span>
                       )}
@@ -266,7 +302,11 @@ export default function ProfileView({
                   {playing.map((game) => (
                     <button key={game.id} type="button" onClick={() => onOpenGame(game)}>
                       {game.coverUrl ? (
-                        <img src={game.coverUrl} alt="" />
+                        <ImageWithFallback
+                          src={game.coverUrl}
+                          alt=""
+                          fallback={<span>{game.title[0]}</span>}
+                        />
                       ) : (
                         <span>{game.title[0]}</span>
                       )}
@@ -317,7 +357,7 @@ export default function ProfileView({
           onClose={() => setEditing(false)}
           busy={saving}
         >
-          <form onSubmit={saveProfile}>
+          <form onSubmit={saveProfile} aria-busy={saving}>
             <header className="modal-header">
               <div>
                 <p className="eyebrow">Personalización</p>
@@ -354,24 +394,78 @@ export default function ProfileView({
               <span>Sobre mí</span>
               <textarea rows={4} value={about} onChange={(event) => setAbout(event.target.value)} />
             </label>
-            <label className="field">
-              <span>URL del avatar</span>
-              <input
-                type="url"
-                value={avatarUrl}
-                onChange={(event) => setAvatarUrl(event.target.value)}
-                placeholder="https://…"
-              />
-            </label>
-            <label className="field">
-              <span>URL del fondo</span>
-              <input
-                type="url"
-                value={backgroundUrl}
-                onChange={(event) => setBackgroundUrl(event.target.value)}
-                placeholder="https://…"
-              />
-            </label>
+            <div className="image-field">
+              <label className="field">
+                <span>URL del avatar</span>
+                <input
+                  type="url"
+                  value={avatarUrl}
+                  onChange={(event) => setAvatarUrl(event.target.value)}
+                  placeholder="https://…"
+                  disabled={saving}
+                />
+              </label>
+              <div className="image-actions">
+                <button
+                  type="button"
+                  className="quiet-button"
+                  aria-label={
+                    selectingImage === 'avatar'
+                      ? 'Eligiendo archivo para el avatar'
+                      : 'Elegir archivo para el avatar'
+                  }
+                  onClick={() => void selectImage('avatar', setAvatarUrl)}
+                  disabled={saving}
+                >
+                  {selectingImage === 'avatar' ? 'Eligiendo…' : 'Elegir archivo'}
+                </button>
+                <button
+                  type="button"
+                  className="text-button"
+                  aria-label="Quitar avatar"
+                  onClick={() => setAvatarUrl('')}
+                  disabled={saving || !avatarUrl}
+                >
+                  Quitar imagen
+                </button>
+              </div>
+            </div>
+            <div className="image-field">
+              <label className="field">
+                <span>URL del fondo</span>
+                <input
+                  type="url"
+                  value={backgroundUrl}
+                  onChange={(event) => setBackgroundUrl(event.target.value)}
+                  placeholder="https://…"
+                  disabled={saving}
+                />
+              </label>
+              <div className="image-actions">
+                <button
+                  type="button"
+                  className="quiet-button"
+                  aria-label={
+                    selectingImage === 'background'
+                      ? 'Eligiendo archivo para el fondo'
+                      : 'Elegir archivo para el fondo'
+                  }
+                  onClick={() => void selectImage('background', setBackgroundUrl)}
+                  disabled={saving}
+                >
+                  {selectingImage === 'background' ? 'Eligiendo…' : 'Elegir archivo'}
+                </button>
+                <button
+                  type="button"
+                  className="text-button"
+                  aria-label="Quitar fondo"
+                  onClick={() => setBackgroundUrl('')}
+                  disabled={saving || !backgroundUrl}
+                >
+                  Quitar imagen
+                </button>
+              </div>
+            </div>
             {profileError && (
               <p className="modal-error" role="alert">
                 {profileError}

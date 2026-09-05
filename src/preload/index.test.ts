@@ -26,6 +26,7 @@ beforeEach(() => {
 
 describe('preload desktop API', () => {
   it.each([
+    ['selectLocalImage', IPC.selectLocalImage, []],
     ['listGames', IPC.listGames, []],
     ['createGame', IPC.createGame, [{ title: 'Celeste', status: 'pendiente' }]],
     ['updateGame', IPC.updateGame, [7, { title: 'Celeste', status: 'jugando' }]],
