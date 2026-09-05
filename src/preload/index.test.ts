@@ -14,7 +14,6 @@ vi.mock('electron', () => ({
 let api: GameVaultApi
 
 beforeAll(async () => {
-  Object.defineProperty(process, 'contextIsolated', { configurable: true, value: true })
   await import('./index')
   expect(electron.exposeInMainWorld).toHaveBeenCalledWith('api', expect.any(Object))
   api = electron.exposeInMainWorld.mock.calls[0][1] as GameVaultApi

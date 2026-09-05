@@ -1,5 +1,7 @@
 import Database from 'better-sqlite3'
 
+const SCHEMA_VERSION = 1
+
 const GAME_TABLE = `CREATE TABLE IF NOT EXISTS games (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   source TEXT NOT NULL DEFAULT 'manual' CHECK (source IN ('manual','steam','rawg')),
@@ -70,18 +72,32 @@ const GAME_COLUMNS: Record<string, string> = {
   metacritic: 'INTEGER'
 }
 
-function allowSteamSource(db: Database.Database): void {
-  const row = db
-    .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'games'")
-    .get() as { sql: string } | undefined
-  if (row?.sql.includes("'steam'")) return
+function needsSteamSourceMigration(db: Database.Database): boolean {
+  const columns = db.prepare('PRAGMA table_info(games)').all() as { name: string }[]
+  if (columns.length === 0 || !columns.some(({ name }) => name === 'source'))
+    return columns.length > 0
 
-  db.transaction(() => {
-    db.exec('DROP INDEX IF EXISTS games_catalog_source_id')
-    db.exec('ALTER TABLE games RENAME TO games_before_steam')
-    db.exec(GAME_TABLE)
-    db.exec(`
-      INSERT INTO games (
+  db.exec('SAVEPOINT gamevault_source_probe')
+  try {
+    db.prepare(
+      "INSERT INTO games (source, title) VALUES ('steam', '__gamevault_source_probe__')"
+    ).run()
+    db.exec('ROLLBACK TO gamevault_source_probe; RELEASE gamevault_source_probe')
+    return false
+  } catch {
+    db.exec('ROLLBACK TO gamevault_source_probe; RELEASE gamevault_source_probe')
+    return true
+  }
+}
+
+function allowSteamSource(db: Database.Database): void {
+  const replacementTable = GAME_TABLE.replace(
+    'CREATE TABLE IF NOT EXISTS games',
+    'CREATE TABLE games_with_steam'
+  )
+  db.exec(`
+      ${replacementTable}
+      INSERT INTO games_with_steam (
         id, source, catalog_id, title, description, status, playtime_minutes, rating, notes,
         cover_path, cover_url, background_url, screenshots, released_at, developers, publishers,
         genres, platforms, website, metacritic, showcased, completed_at, added_at
@@ -90,10 +106,10 @@ function allowSteamSource(db: Database.Database): void {
         id, source, catalog_id, title, description, status, playtime_minutes, rating, notes,
         cover_path, cover_url, background_url, screenshots, released_at, developers, publishers,
         genres, platforms, website, metacritic, showcased, completed_at, added_at
-      FROM games_before_steam;
-      DROP TABLE games_before_steam;
+      FROM games;
+      DROP TABLE games;
+      ALTER TABLE games_with_steam RENAME TO games;
     `)
-  })()
 }
 
 const PROFILE_COLUMNS: Record<string, string> = {
@@ -115,19 +131,46 @@ function addMissingColumns(
   }
 }
 
+/** Opens and upgrades a database atomically, closing it before any initialization error escapes. */
 export function openDatabase(file: string): Database.Database {
   const db = new Database(file)
-  db.pragma('journal_mode = WAL')
-  db.pragma('foreign_keys = ON')
-  db.exec(SCHEMA)
-  addMissingColumns(db, 'games', GAME_COLUMNS)
-  addMissingColumns(db, 'profile', PROFILE_COLUMNS)
-  allowSteamSource(db)
-  db.transaction(() => db.exec(ACHIEVEMENT_SCHEMA))()
-  db.exec(`
-    UPDATE games SET cover_url = cover_path WHERE cover_url IS NULL AND cover_path IS NOT NULL;
-    CREATE UNIQUE INDEX IF NOT EXISTS games_catalog_source_id
-      ON games(source, catalog_id) WHERE catalog_id IS NOT NULL;
-  `)
-  return db
+  try {
+    db.pragma('journal_mode = WAL')
+    db.pragma('foreign_keys = ON')
+    const version = db.pragma('user_version', { simple: true }) as number
+    if (version > SCHEMA_VERSION) {
+      throw new Error(`Unsupported database schema version ${version}`)
+    }
+
+    const rebuildGames = needsSteamSourceMigration(db)
+    if (rebuildGames) db.pragma('foreign_keys = OFF')
+
+    db.transaction(() => {
+      db.exec(SCHEMA)
+      addMissingColumns(db, 'games', GAME_COLUMNS)
+      addMissingColumns(db, 'profile', PROFILE_COLUMNS)
+      if (rebuildGames) allowSteamSource(db)
+      db.exec(ACHIEVEMENT_SCHEMA)
+      db.exec(`
+        UPDATE games SET cover_url = cover_path WHERE cover_url IS NULL AND cover_path IS NOT NULL;
+        CREATE UNIQUE INDEX IF NOT EXISTS games_catalog_source_id
+          ON games(source, catalog_id) WHERE catalog_id IS NOT NULL;
+      `)
+
+      const foreignKeyViolations = db.pragma('foreign_key_check') as unknown[]
+      if (foreignKeyViolations.length > 0) {
+        throw new Error('Foreign key check failed during database initialization')
+      }
+      db.pragma(`user_version = ${SCHEMA_VERSION}`)
+    })()
+
+    if (rebuildGames) db.pragma('foreign_keys = ON')
+    if (db.pragma('foreign_keys', { simple: true }) !== 1) {
+      throw new Error('Could not enable SQLite foreign key enforcement')
+    }
+    return db
+  } catch (error) {
+    db.close()
+    throw error
+  }
 }

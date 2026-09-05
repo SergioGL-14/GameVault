@@ -31,3 +31,7 @@
 - Updated TypeScript to version 6 and removed the deprecated `baseUrl` compiler option.
 - Added provider-neutral catalog failures with actionable offline, timeout, retry, and RAWG credential recovery states.
 - Made core navigation, filters, game views, forms, errors, and dialogs keyboard and screen-reader accessible.
+- Hardened Electron navigation, renderer sandboxing, RAWG credential storage, IPC input limits, and startup failure handling.
+- Made SQLite upgrades transactional and versioned, with strict corruption reporting and preserved foreign keys.
+- Kept successful game changes visible when a secondary refresh fails and removed the hidden six-game showcase limit.
+- Added reproducible LF formatting checks and unpacked application verification across supported build platforms.

@@ -48,6 +48,29 @@ describe('repositorio de juegos', () => {
     expect(created.metacritic).toBe(92)
   })
 
+  it.each([
+    ['screenshots', 'private malformed payload'],
+    ['developers', '["Team Cherry", 42]']
+  ])('rejects corrupt persisted JSON in %s without exposing its value', (field, value) => {
+    const db = openDatabase(':memory:')
+    const repo = createLibraryRepository(db)
+    const game = repo.createGame(baseInput)
+    db.prepare(`UPDATE games SET ${field} = ? WHERE id = ?`).run(value, game.id)
+
+    try {
+      repo.listGames()
+      throw new Error('Expected corrupt JSON to be rejected')
+    } catch (error) {
+      expect(error).toBeInstanceOf(Error)
+      expect((error as Error).message).toBe(
+        `Datos dañados en el juego ${game.id}: el campo "${field}" no es una lista válida`
+      )
+      expect((error as Error).message).not.toContain(value)
+    } finally {
+      db.close()
+    }
+  })
+
   it('distingue juegos importados desde Steam', () => {
     const repo = makeRepo()
     const created = repo.createGame({

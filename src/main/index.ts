@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, safeStorage } from 'electron'
+import { app, shell, BrowserWindow, dialog, safeStorage } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../build/icon.png?asset'
@@ -8,6 +8,22 @@ import { registerIpc } from './ipc'
 import { createCatalogKeyStore } from './catalog/rawg-key-store'
 import { createRawgCatalog } from './catalog/rawg'
 import { createSteamCatalog } from './catalog/steam'
+
+function openExternalWebUrl(url: string): void {
+  try {
+    const externalUrl = new URL(url)
+    if (externalUrl.protocol === 'https:' || externalUrl.protocol === 'http:') {
+      void shell.openExternal(externalUrl.toString()).catch(() => {
+        dialog.showErrorBox(
+          'No se pudo abrir el enlace',
+          'GameVault no pudo abrir el navegador del sistema.'
+        )
+      })
+    }
+  } catch {
+    // Invalid and non-web URLs remain blocked.
+  }
+}
 
 function createWindow(): void {
   // Create the browser window.
@@ -21,7 +37,9 @@ function createWindow(): void {
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
-      sandbox: false
+      sandbox: true,
+      contextIsolation: true,
+      nodeIntegration: false
     }
   })
 
@@ -30,15 +48,13 @@ function createWindow(): void {
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
-    try {
-      const url = new URL(details.url)
-      if (url.protocol === 'https:' || url.protocol === 'http:') {
-        void shell.openExternal(url.toString())
-      }
-    } catch {
-      // Invalid or non-web URLs stay inside the denied window-open request.
-    }
+    openExternalWebUrl(details.url)
     return { action: 'deny' }
+  })
+
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    event.preventDefault()
+    openExternalWebUrl(url)
   })
 
   // HMR for renderer base on electron-vite cli.
@@ -55,7 +71,7 @@ function createWindow(): void {
 // Some APIs can only be used after this event occurs.
 app.whenReady().then(() => {
   // Set app user model id for windows
-  electronApp.setAppUserModelId('com.gamevault.app')
+  electronApp.setAppUserModelId('com.sergiogl14.gamevault')
 
   // Default open or close DevTools by F12 in development
   // and ignore CommandOrControl + R in production.
@@ -64,10 +80,24 @@ app.whenReady().then(() => {
     optimizer.watchWindowShortcuts(window)
   })
 
-  const db = openDatabase(join(app.getPath('userData'), 'gamevault.db'))
+  let db: ReturnType<typeof openDatabase>
+  try {
+    db = openDatabase(join(app.getPath('userData'), 'gamevault.db'))
+  } catch {
+    dialog.showErrorBox(
+      'Error al iniciar GameVault',
+      'No se pudo abrir la base de datos local. Tus datos no se han eliminado. Cierra otras instancias de GameVault e inténtalo de nuevo.'
+    )
+    app.quit()
+    return
+  }
   const catalogKey = createCatalogKeyStore(
     join(app.getPath('userData'), 'rawg-key.bin'),
-    safeStorage
+    safeStorage,
+    undefined,
+    () =>
+      safeStorage.isEncryptionAvailable() &&
+      (process.platform !== 'linux' || safeStorage.getSelectedStorageBackend() !== 'basic_text')
   )
   registerIpc(
     createLibraryRepository(db),

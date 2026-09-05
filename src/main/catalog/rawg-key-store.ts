@@ -1,4 +1,5 @@
-import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, renameSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
 import type { CatalogStatus } from '../../catalog/model'
 
 export interface CatalogKeyStore {
@@ -17,18 +18,26 @@ export interface Encryption {
 export function createCatalogKeyStore(
   file: string,
   encryption: Encryption,
-  readEnvironment: () => string | undefined = () => process.env.RAWG_API_KEY
+  readEnvironment: () => string | undefined = () => process.env.RAWG_API_KEY,
+  isSecureStorageAvailable: () => boolean = () => encryption.isEncryptionAvailable()
 ): CatalogKeyStore {
+  function normalizeKey(key: string): string {
+    const normalized = key.trim()
+    if (!normalized || normalized.length > 256) throw new Error('La clave de RAWG no es válida')
+    return normalized
+  }
+
   function environmentKey(): string | null {
-    return readEnvironment()?.trim() || null
+    const key = readEnvironment()
+    return key === undefined || !key.trim() ? null : normalizeKey(key)
   }
 
   function savedKey(): string | null {
     if (!existsSync(file)) return null
-    if (!encryption.isEncryptionAvailable()) {
+    if (!isSecureStorageAvailable()) {
       throw new Error('El cifrado seguro del sistema no está disponible')
     }
-    return encryption.decryptString(readFileSync(file))
+    return normalizeKey(encryption.decryptString(readFileSync(file)))
   }
 
   function status(): CatalogStatus {
@@ -46,12 +55,17 @@ export function createCatalogKeyStore(
     },
 
     save(key: string): CatalogStatus {
-      const normalized = key.trim()
-      if (!normalized || normalized.length > 256) throw new Error('La clave de RAWG no es válida')
-      if (!encryption.isEncryptionAvailable()) {
+      const normalized = normalizeKey(key)
+      if (!isSecureStorageAvailable()) {
         throw new Error('El cifrado seguro del sistema no está disponible')
       }
-      writeFileSync(file, encryption.encryptString(normalized), { mode: 0o600 })
+      const temporaryFile = `${file}.${process.pid}.${randomUUID()}.tmp`
+      try {
+        writeFileSync(temporaryFile, encryption.encryptString(normalized), { mode: 0o600 })
+        renameSync(temporaryFile, file)
+      } finally {
+        rmSync(temporaryFile, { force: true })
+      }
       return status()
     },
 

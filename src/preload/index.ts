@@ -21,13 +21,4 @@ const api: GameVaultApi = {
     ipcRenderer.invoke(IPC.getCatalogGame, provider, catalogId)
 }
 
-if (process.contextIsolated) {
-  try {
-    contextBridge.exposeInMainWorld('api', api)
-  } catch (error) {
-    console.error(error)
-  }
-} else {
-  // @ts-ignore (define in dts)
-  window.api = api
-}
+contextBridge.exposeInMainWorld('api', api)

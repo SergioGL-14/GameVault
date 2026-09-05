@@ -278,6 +278,18 @@ describe('critical library flows', () => {
     )
   })
 
+  it('keeps a created game visible when the library refresh fails', async () => {
+    const api = createApi()
+    await openAddGameModal(api)
+    fireEvent.click(screen.getByRole('button', { name: 'Entrada manual' }))
+    fireEvent.change(screen.getByLabelText('Título'), { target: { value: 'Hades' } })
+    vi.mocked(api.listGames).mockRejectedValueOnce(new Error('No se pudo actualizar la biblioteca'))
+    fireEvent.click(screen.getByRole('button', { name: 'Crear ficha' }))
+
+    expect(await screen.findByRole('heading', { name: 'Hades' })).toBeTruthy()
+    expect(await screen.findByText('No se pudo actualizar la biblioteca')).toBeTruthy()
+  })
+
   it('shows a create failure inside the add dialog', async () => {
     const api = createApi()
     vi.mocked(api.createGame).mockRejectedValueOnce(new Error('No se pudo crear el juego'))
@@ -305,6 +317,17 @@ describe('critical library flows', () => {
     )
   })
 
+  it('keeps an updated game visible when the library refresh fails', async () => {
+    const api = createApi([game])
+    await openEditor(api)
+    fireEvent.change(screen.getByLabelText('Título'), { target: { value: 'Celeste Updated' } })
+    vi.mocked(api.listGames).mockRejectedValueOnce(new Error('No se pudo actualizar la biblioteca'))
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }))
+
+    expect(await screen.findByRole('heading', { name: 'Celeste Updated' })).toBeTruthy()
+    expect(await screen.findByText('No se pudo actualizar la biblioteca')).toBeTruthy()
+  })
+
   it('shows an update failure inside the edit dialog', async () => {
     const api = createApi([game])
     vi.mocked(api.updateGame).mockRejectedValueOnce(new Error('No se pudo guardar el juego'))
@@ -325,6 +348,31 @@ describe('critical library flows', () => {
     expect(api.deleteGame).toHaveBeenCalledWith(game.id)
   })
 
+  it('keeps a deleted game hidden when the library refresh fails', async () => {
+    const api = createApi([game])
+    await openEditor(api)
+    vi.mocked(api.listGames).mockRejectedValueOnce(new Error('No se pudo actualizar la biblioteca'))
+    fireEvent.click(screen.getByRole('button', { name: 'Eliminar de la biblioteca' }))
+
+    expect(await screen.findByRole('heading', { name: 'Empieza tu colección' })).toBeTruthy()
+    expect(await screen.findByText('No se pudo actualizar la biblioteca')).toBeTruthy()
+  })
+
+  it('keeps a showcase change visible when the library refresh fails', async () => {
+    const api = createApi([game])
+    await renderLibrary(api)
+    fireEvent.click(await screen.findByRole('button', { name: /Celeste/ }))
+    vi.mocked(api.listGames).mockRejectedValueOnce(new Error('No se pudo actualizar la biblioteca'))
+    fireEvent.click(screen.getByRole('button', { name: '★ Destacar' }))
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: '★ En el expositor' }).getAttribute('aria-pressed')
+      ).toBe('true')
+    )
+    expect(await screen.findByText('No se pudo actualizar la biblioteca')).toBeTruthy()
+  })
+
   it('shows a delete failure inside the edit dialog', async () => {
     const api = createApi([game])
     vi.mocked(api.deleteGame).mockRejectedValueOnce(new Error('No se pudo eliminar el juego'))
@@ -333,6 +381,23 @@ describe('critical library flows', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Eliminar de la biblioteca' }))
 
     expect(await screen.findByText('No se pudo eliminar el juego')).toBeTruthy()
+  })
+})
+
+describe('profile showcase', () => {
+  it('displays every showcased game', async () => {
+    const games = Array.from({ length: 7 }, (_, index) => ({
+      ...game,
+      id: index + 1,
+      title: `Showcase ${index + 1}`,
+      showcased: true
+    }))
+    const api = createApi(games)
+    window.api = api
+    render(<App />)
+
+    expect(await screen.findByText('7 seleccionados')).toBeTruthy()
+    expect(screen.getByText('Showcase 7')).toBeTruthy()
   })
 })
 

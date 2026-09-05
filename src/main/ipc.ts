@@ -24,7 +24,7 @@ export function registerIpc(
   catalogKey: CatalogKeyStore
 ): void {
   function positiveInteger(value: unknown, label: string): asserts value is number {
-    if (!Number.isInteger(value) || (value as number) <= 0) {
+    if (!Number.isSafeInteger(value) || (value as number) <= 0) {
       throw new ValidationError(`${label} no es válido`)
     }
   }
@@ -108,7 +108,7 @@ export function registerIpc(
   ipcMain.handle(IPC.searchCatalog, (_event, provider: unknown, query: unknown) => {
     const selected = catalogFor(provider)
     return catalogResult(selected.provider, () => {
-      if (typeof query !== 'string' || query.trim().length < 2) {
+      if (typeof query !== 'string' || query.trim().length < 2 || query.trim().length > 100) {
         throw new CatalogError({ provider: selected.provider, kind: 'invalid-input' })
       }
       return selected.catalog.search(query)
@@ -117,7 +117,7 @@ export function registerIpc(
   ipcMain.handle(IPC.getCatalogGame, (_event, provider: unknown, catalogId: unknown) => {
     const selected = catalogFor(provider)
     return catalogResult(selected.provider, () => {
-      if (!Number.isInteger(catalogId) || (catalogId as number) <= 0) {
+      if (!Number.isSafeInteger(catalogId) || (catalogId as number) <= 0) {
         throw new CatalogError({ provider: selected.provider, kind: 'invalid-input' })
       }
       return selected.catalog.getGame(catalogId as number)

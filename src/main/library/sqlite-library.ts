@@ -51,15 +51,14 @@ type AchievementRow = {
   unlocked_at: string | null
 }
 
-function parseList(value: string): string[] {
+function parseList(value: string, gameId: number, field: string): string[] {
   try {
     const parsed: unknown = JSON.parse(value)
-    return Array.isArray(parsed)
-      ? parsed.filter((item): item is string => typeof item === 'string')
-      : []
+    if (Array.isArray(parsed) && parsed.every((item) => typeof item === 'string')) return parsed
   } catch {
-    return []
+    // The contextual error below intentionally excludes persisted content.
   }
+  throw new Error(`Datos dañados en el juego ${gameId}: el campo "${field}" no es una lista válida`)
 }
 
 function toGame(row: Row): Game {
@@ -75,12 +74,12 @@ function toGame(row: Row): Game {
     notes: row.notes,
     coverUrl: row.cover_url,
     backgroundUrl: row.background_url,
-    screenshots: parseList(row.screenshots),
+    screenshots: parseList(row.screenshots, row.id, 'screenshots'),
     releasedAt: row.released_at,
-    developers: parseList(row.developers),
-    publishers: parseList(row.publishers),
-    genres: parseList(row.genres),
-    platforms: parseList(row.platforms),
+    developers: parseList(row.developers, row.id, 'developers'),
+    publishers: parseList(row.publishers, row.id, 'publishers'),
+    genres: parseList(row.genres, row.id, 'genres'),
+    platforms: parseList(row.platforms, row.id, 'platforms'),
     website: row.website,
     metacritic: row.metacritic,
     showcased: row.showcased === 1,
