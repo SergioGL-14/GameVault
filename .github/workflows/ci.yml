@@ -29,7 +29,7 @@ jobs:
       # npm 11 currently treats better-sqlite3 as a node-gyp project during npm ci,
       # even though the package ships platform binaries and disables gyp builds.
       - name: Install Electron binary
-        run: npx electron --version
+        run: node node_modules/electron/install.js
 
       - name: Check formatting
         run: npm run format:check
@@ -70,7 +70,7 @@ jobs:
         run: npm ci --ignore-scripts
 
       - name: Install Electron binary
-        run: npx electron --version
+        run: node node_modules/electron/install.js
 
       - name: Build unpacked application
         run: npm run build:unpack
