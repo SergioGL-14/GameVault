@@ -233,8 +233,8 @@ export default function AddGameModal({ onAdd, onClose }: AddGameModalProps): Rea
           <div>
             <h3>Conecta el catálogo de RAWG</h3>
             <p>
-              Usa tu propia clave gratuita. Se cifra con la protección de credenciales de Windows y
-              nunca se expone al navegador de la aplicación.
+              Usa tu propia clave gratuita. Se cifra con la protección segura del sistema operativo
+              y, después de guardarla, no vuelve a mostrarse en la aplicación.
             </p>
             <a href="https://rawg.io/login?forward=developer" target="_blank" rel="noreferrer">
               Obtener clave gratuita ↗

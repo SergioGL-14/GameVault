@@ -1,5 +1,10 @@
 import { GAME_STATUSES, type AchievementInput, type GameInput, type ProfileInput } from './model'
 
+const MAX_STRING_LENGTH = 10_000
+const MAX_LONG_TEXT_LENGTH = 262_144
+const MAX_LIST_LENGTH = 100
+const MAX_URL_LENGTH = 2_048
+
 export class ValidationError extends Error {
   constructor(message: string) {
     super(message)
@@ -7,13 +12,28 @@ export class ValidationError extends Error {
   }
 }
 
-function validateWebUrl(value: string | null | undefined, label: string): void {
+function validateWebUrl(
+  value: string | null | undefined,
+  label: string,
+  protocol: 'https' | 'http-or-https' = 'http-or-https'
+): void {
   if (!value) return
   try {
+    if (value.length > MAX_URL_LENGTH) throw new Error()
     const url = new URL(value)
-    if (url.protocol !== 'https:' && url.protocol !== 'http:') throw new Error()
+    if (
+      (protocol === 'https'
+        ? url.protocol !== 'https:'
+        : url.protocol !== 'https:' && url.protocol !== 'http:') ||
+      url.username ||
+      url.password
+    ) {
+      throw new Error()
+    }
   } catch {
-    throw new ValidationError(`${label} debe ser una URL http o https válida`)
+    throw new ValidationError(
+      `${label} debe ser una URL ${protocol === 'https' ? 'https' : 'http o https'} válida`
+    )
   }
 }
 
@@ -24,15 +44,22 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function validateOptionalString(
   value: unknown,
   label: string,
-  nullable = false
+  nullable = false,
+  maximumLength = MAX_STRING_LENGTH
 ): asserts value is string | null | undefined {
   if (value === undefined || (nullable && value === null)) return
-  if (typeof value !== 'string') throw new ValidationError(`${label} no es válido`)
+  if (typeof value !== 'string' || value.length > maximumLength) {
+    throw new ValidationError(`${label} no es válido`)
+  }
 }
 
 function validateStringList(value: unknown, label: string): asserts value is string[] | undefined {
   if (value === undefined) return
-  if (!Array.isArray(value) || value.some((entry) => typeof entry !== 'string')) {
+  if (
+    !Array.isArray(value) ||
+    value.length > MAX_LIST_LENGTH ||
+    value.some((entry) => typeof entry !== 'string' || entry.length > MAX_STRING_LENGTH)
+  ) {
     throw new ValidationError(`${label} no es válido`)
   }
 }
@@ -44,7 +71,9 @@ export function validateGameInput(input: unknown): asserts input is GameInput {
   }
 
   const title = input.title.trim()
-  if (!title) throw new ValidationError('El título no puede estar vacío')
+  if (!title || input.title.length > MAX_STRING_LENGTH) {
+    throw new ValidationError('El título no puede estar vacío o ser demasiado largo')
+  }
 
   if (!GAME_STATUSES.includes(input.status as GameInput['status'])) {
     throw new ValidationError(`Estado no válido: ${input.status}`)
@@ -62,7 +91,7 @@ export function validateGameInput(input: unknown): asserts input is GameInput {
   const playtimeMinutes = input.playtimeMinutes === undefined ? 0 : input.playtimeMinutes
   if (
     typeof playtimeMinutes !== 'number' ||
-    !Number.isInteger(playtimeMinutes) ||
+    !Number.isSafeInteger(playtimeMinutes) ||
     playtimeMinutes < 0
   ) {
     throw new ValidationError('El tiempo jugado debe ser un número entero no negativo')
@@ -76,8 +105,8 @@ export function validateGameInput(input: unknown): asserts input is GameInput {
     throw new ValidationError('La puntuación debe estar entre 1 y 10')
   }
 
-  validateOptionalString(input.description, 'La descripción')
-  validateOptionalString(input.notes, 'Las notas')
+  validateOptionalString(input.description, 'La descripción', false, MAX_LONG_TEXT_LENGTH)
+  validateOptionalString(input.notes, 'Las notas', false, MAX_LONG_TEXT_LENGTH)
   validateOptionalString(input.coverUrl, 'La carátula', true)
   validateOptionalString(input.backgroundUrl, 'El fondo', true)
   validateOptionalString(input.releasedAt, 'La fecha de lanzamiento', true)
@@ -91,11 +120,15 @@ export function validateGameInput(input: unknown): asserts input is GameInput {
     throw new ValidationError('El estado del expositor no es válido')
   }
 
+  const source = input.source ?? 'manual'
+  const validCatalogId =
+    typeof input.catalogId === 'number' &&
+    Number.isSafeInteger(input.catalogId) &&
+    input.catalogId > 0
+  // Source records import provenance, not ownership on a future gaming platform.
   if (
-    input.catalogId != null &&
-    (typeof input.catalogId !== 'number' ||
-      !Number.isInteger(input.catalogId) ||
-      input.catalogId <= 0)
+    (source === 'manual' && input.catalogId != null) ||
+    (source !== 'manual' && !validCatalogId)
   ) {
     throw new ValidationError('El identificador del catálogo no es válido')
   }
@@ -113,7 +146,9 @@ export function validateGameInput(input: unknown): asserts input is GameInput {
   validateWebUrl(input.coverUrl, 'La carátula')
   validateWebUrl(input.backgroundUrl, 'El fondo')
   validateWebUrl(input.website, 'El sitio oficial')
-  for (const screenshot of input.screenshots ?? []) validateWebUrl(screenshot, 'Cada captura')
+  for (const screenshot of input.screenshots ?? []) {
+    validateWebUrl(screenshot, 'Cada captura')
+  }
 }
 
 /** Validates untrusted achievement data, including its unlock-state consistency. */
@@ -121,15 +156,14 @@ export function validateAchievementInput(input: unknown): asserts input is Achie
   if (!isRecord(input) || typeof input.name !== 'string' || typeof input.unlocked !== 'boolean') {
     throw new ValidationError('Los datos del logro no son válidos')
   }
-  if (!input.name.trim()) throw new ValidationError('El nombre del logro no puede estar vacío')
+  if (!input.name.trim() || input.name.length > MAX_STRING_LENGTH) {
+    throw new ValidationError('El nombre del logro no puede estar vacío o ser demasiado largo')
+  }
 
-  validateOptionalString(input.description, 'La descripción')
+  validateOptionalString(input.description, 'La descripción', false, MAX_LONG_TEXT_LENGTH)
   validateOptionalString(input.iconUrl, 'El icono', true)
   validateOptionalString(input.unlockedAt, 'La fecha de desbloqueo', true)
-  validateWebUrl(input.iconUrl, 'El icono')
-  if (input.iconUrl && new URL(input.iconUrl).protocol !== 'https:') {
-    throw new ValidationError('El icono debe ser una URL https válida')
-  }
+  validateWebUrl(input.iconUrl, 'El icono', 'https')
 
   if (input.unlockedAt) {
     const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(input.unlockedAt)
@@ -156,9 +190,11 @@ export function validateProfileInput(input: unknown): asserts input is ProfileIn
     throw new ValidationError('Los datos del perfil no son válidos')
   }
 
-  if (!input.displayName.trim()) {
-    throw new ValidationError('El nombre de perfil no puede estar vacío')
+  if (!input.displayName.trim() || input.displayName.length > MAX_STRING_LENGTH) {
+    throw new ValidationError('El nombre de perfil no puede estar vacío o ser demasiado largo')
   }
+  validateOptionalString(input.about, 'La biografía', false, MAX_LONG_TEXT_LENGTH)
+  validateOptionalString(input.location, 'La ubicación')
   validateWebUrl(input.avatarUrl, 'El avatar')
   validateWebUrl(input.backgroundUrl, 'El fondo')
 }

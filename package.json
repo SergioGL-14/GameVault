@@ -12,6 +12,7 @@
   "bugs": "https://github.com/SergioGL-14/GameVault/issues",
   "scripts": {
     "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "lint": "eslint --cache .",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
@@ -21,9 +22,14 @@
     "build": "npm run typecheck && electron-vite build",
     "test": "vitest run",
     "build:unpack": "npm run build && electron-builder --dir",
+    "smoke:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/smoke-win.ps1",
     "build:win": "npm run build && electron-builder --win",
-    "build:mac": "electron-vite build && electron-builder --mac",
-    "build:linux": "electron-vite build && electron-builder --linux"
+    "build:mac": "npm run build && electron-builder --mac",
+    "build:linux": "npm run build && electron-builder --linux"
+  },
+  "engines": {
+    "node": ">=24",
+    "npm": ">=11"
   },
   "dependencies": {
     "@electron-toolkit/utils": "^4.0.0",

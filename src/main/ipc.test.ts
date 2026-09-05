@@ -119,10 +119,13 @@ describe('IPC registration', () => {
 })
 
 describe('IPC validation', () => {
-  it.each([0, -1, 1.5, '7', null])('rejects malformed library ID %j', (id) => {
-    expect(() => invoke(IPC.deleteGame, id)).toThrow('identificador del juego')
-    expect(repo.deleteGame).not.toHaveBeenCalled()
-  })
+  it.each([0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, '7', null])(
+    'rejects malformed library ID %j',
+    (id) => {
+      expect(() => invoke(IPC.deleteGame, id)).toThrow('identificador del juego')
+      expect(repo.deleteGame).not.toHaveBeenCalled()
+    }
+  )
 
   it('rejects malformed game input', () => {
     expect(() => invoke(IPC.createGame, null)).toThrow('juego')
@@ -134,10 +137,13 @@ describe('IPC validation', () => {
     expect(repo.updateGame).not.toHaveBeenCalled()
   })
 
-  it.each([0, -1, 1.5, '9', null])('rejects malformed achievement ID %j', (id) => {
-    expect(() => invoke(IPC.deleteAchievement, id)).toThrow('identificador del logro')
-    expect(repo.deleteAchievement).not.toHaveBeenCalled()
-  })
+  it.each([0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, '9', null])(
+    'rejects malformed achievement ID %j',
+    (id) => {
+      expect(() => invoke(IPC.deleteAchievement, id)).toThrow('identificador del logro')
+      expect(repo.deleteAchievement).not.toHaveBeenCalled()
+    }
+  )
 
   it('rejects malformed achievement input before persistence', () => {
     expect(() => invoke(IPC.createAchievement, 7, null)).toThrow('logro')
@@ -180,6 +186,21 @@ describe('IPC validation', () => {
     expect(rawgCatalog.verifyKey).not.toHaveBeenCalled()
   })
 
+  it('enforces the providers catalog query limit', async () => {
+    const maxQuery = 'a'.repeat(100)
+
+    await expect(invoke(IPC.searchCatalog, 'steam', maxQuery)).resolves.toEqual({
+      ok: true,
+      value: undefined
+    })
+    await expect(invoke(IPC.searchCatalog, 'steam', `${maxQuery}a`)).resolves.toEqual({
+      ok: false,
+      error: { provider: 'steam', kind: 'invalid-input' }
+    })
+    expect(steamCatalog.search).toHaveBeenCalledOnce()
+    expect(steamCatalog.search).toHaveBeenCalledWith(maxQuery)
+  })
+
   it('serializes adapter failures without provider implementation details', async () => {
     vi.mocked(steamCatalog.search).mockRejectedValueOnce(
       new CatalogError({ provider: 'steam', kind: 'timeout' })
@@ -198,7 +219,7 @@ describe('IPC validation', () => {
     expect(catalogKey.save).toHaveBeenCalledWith('key')
   })
 
-  it.each([0, -1, 1.5, '7', null])(
+  it.each([0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, '7', null])(
     'returns a failure for malformed catalog ID %j',
     async (catalogId) => {
       await expect(invoke(IPC.getCatalogGame, 'steam', catalogId)).resolves.toEqual({

@@ -76,6 +76,7 @@ function App(): React.JSX.Element {
         setGames(nextGames)
         setProfile(nextProfile)
         setStats(nextStats)
+        document.title = 'GameVault'
       })
       .catch((reason: unknown) => {
         if (active) setError(formatError(reason))
@@ -167,8 +168,17 @@ function App(): React.JSX.Element {
     clearGameSelection()
   }
 
+  function storeGame(game: Game): void {
+    setGames((current) =>
+      [...current.filter((entry) => entry.id !== game.id), game].sort((first, second) =>
+        first.title.localeCompare(second.title, 'es')
+      )
+    )
+  }
+
   async function createGame(input: GameInput): Promise<Game> {
     const created = await window.api.createGame(input)
+    storeGame(created)
     setAddOpen(false)
     focusTargetRef.current = 'heading'
     returnFocusRef.current = null
@@ -184,7 +194,7 @@ function App(): React.JSX.Element {
   }
 
   async function updateGame(game: Game, input: GameInput): Promise<void> {
-    await window.api.updateGame(game.id, input)
+    storeGame(await window.api.updateGame(game.id, input))
     setEditGame(null)
     await refresh()
   }
@@ -192,6 +202,7 @@ function App(): React.JSX.Element {
   async function deleteGame(game: Game): Promise<void> {
     if (!window.confirm(`¿Eliminar "${game.title}" de tu biblioteca?`)) return
     await window.api.deleteGame(game.id)
+    setGames((current) => current.filter((entry) => entry.id !== game.id))
     setEditGame(null)
     focusTargetRef.current = 'heading'
     returnFocusRef.current = null
@@ -247,10 +258,12 @@ function App(): React.JSX.Element {
 
   async function toggleShowcase(game: Game): Promise<void> {
     try {
-      await window.api.updateGame(game.id, {
-        ...gameToInput(game),
-        showcased: !game.showcased
-      })
+      storeGame(
+        await window.api.updateGame(game.id, {
+          ...gameToInput(game),
+          showcased: !game.showcased
+        })
+      )
       await refresh()
     } catch (reason) {
       setError(formatError(reason))

@@ -82,7 +82,7 @@ export default function LibraryView({ games, onAdd, onOpen }: LibraryViewProps):
           <p>
             {games.length
               ? 'Prueba otra búsqueda o cambia el filtro.'
-              : 'Busca un juego en RAWG o crea una ficha manual.'}
+              : 'Busca un juego en Steam, usa RAWG como alternativa o crea una ficha manual.'}
           </p>
           {!games.length && (
             <button type="button" className="action-button" onClick={onAdd}>

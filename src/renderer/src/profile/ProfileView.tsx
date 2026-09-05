@@ -31,7 +31,7 @@ export default function ProfileView({
   const [backgroundUrl, setBackgroundUrl] = useState('')
   const [saving, setSaving] = useState(false)
   const [profileError, setProfileError] = useState<string | null>(null)
-  const showcased = games.filter((game) => game.showcased).slice(0, 6)
+  const showcased = games.filter((game) => game.showcased)
   const completed = games
     .filter((game) => game.status === 'completado')
     .sort((a, b) => (b.completedAt ?? '').localeCompare(a.completedAt ?? ''))

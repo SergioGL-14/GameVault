@@ -26,7 +26,7 @@ The application is still an early MVP. The interface is currently in Spanish bec
 Open **Library → Add game** and choose one of the three sources:
 
 1. **Steam** — the normal path. Search by title and select the matching game.
-2. **RAWG** — optional fallback for games outside Steam. The key is checked before it is saved and encrypted with Electron `safeStorage`.
+2. **RAWG** — optional fallback for games outside Steam. The key is checked before it is saved and encrypted with Electron `safeStorage`. Linux systems without a secure credential backend must use `RAWG_API_KEY` instead of saving the key.
 3. **Manual entry** — title, cover URL, and description without any external provider.
 
 Imported metadata is copied into the local database, so titles, descriptions, and personal progress remain available offline. Artwork still uses the provider's remote URLs and needs a network connection.
@@ -65,10 +65,14 @@ GitHub Actions runs the same checks on every pull request and every push to `mai
 Dependency updates and the protected-branch recovery procedure are documented in [`docs/repository-maintenance.md`](docs/repository-maintenance.md).
 
 ```bash
+npm run format:check
 npm run lint
 npm run typecheck
 npm test
+npm run build
 ```
+
+CI also creates unpacked builds on Windows, macOS, and Linux, and smoke-tests the packaged Windows application.
 
 Build a Windows installer with:
 
