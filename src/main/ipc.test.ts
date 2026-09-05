@@ -53,6 +53,8 @@ const catalogKey: CatalogKeyStore = {
   clear: method<CatalogKeyStore['clear']>()
 }
 
+const selectLocalImage = vi.fn<() => Promise<string | null>>()
+
 function invoke(channel: string, ...args: unknown[]): unknown {
   const handler = electron.handlers.get(channel)
   if (!handler) throw new Error(`Missing IPC handler: ${channel}`)
@@ -62,7 +64,7 @@ function invoke(channel: string, ...args: unknown[]): unknown {
 beforeEach(() => {
   vi.clearAllMocks()
   electron.handlers.clear()
-  registerIpc(repo, steamCatalog, rawgCatalog, catalogKey)
+  registerIpc(repo, steamCatalog, rawgCatalog, catalogKey, selectLocalImage)
 })
 
 describe('IPC registration', () => {
@@ -115,6 +117,14 @@ describe('IPC registration', () => {
     expect(rawgCatalog.getGame).toHaveBeenCalledWith(7)
     expect(rawgCatalog.verifyKey).toHaveBeenCalledWith('key')
     expect(catalogKey.save).toHaveBeenCalledWith('key')
+  })
+
+  it('forwards local image selection without renderer-supplied paths', async () => {
+    selectLocalImage.mockResolvedValueOnce('gamevault-image://local/image.png')
+
+    await invoke(IPC.selectLocalImage)
+
+    expect(selectLocalImage).toHaveBeenCalledWith()
   })
 })
 

@@ -21,7 +21,8 @@ export function registerIpc(
   repo: LibraryRepository,
   steamCatalog: GameCatalog,
   rawgCatalog: AuthenticatedGameCatalog,
-  catalogKey: CatalogKeyStore
+  catalogKey: CatalogKeyStore,
+  selectLocalImage: () => Promise<string | null>
 ): void {
   function positiveInteger(value: unknown, label: string): asserts value is number {
     if (!Number.isSafeInteger(value) || (value as number) <= 0) {
@@ -50,6 +51,7 @@ export function registerIpc(
     }
   }
 
+  ipcMain.handle(IPC.selectLocalImage, () => selectLocalImage())
   ipcMain.handle(IPC.listGames, () => repo.listGames())
   ipcMain.handle(IPC.createGame, (_event, input: unknown) => {
     validateGameInput(input)

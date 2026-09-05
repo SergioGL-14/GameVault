@@ -112,7 +112,8 @@ function createApi(
     })),
     clearCatalogKey: vi.fn(async () => ({ configured: false, source: null })),
     searchCatalog: vi.fn(async () => ({ ok: true as const, value: [] })),
-    getCatalogGame: vi.fn()
+    getCatalogGame: vi.fn(),
+    selectLocalImage: vi.fn(async () => null)
   }
 }
 
@@ -263,6 +264,103 @@ describe('core accessibility', () => {
 })
 
 describe('critical library flows', () => {
+  it('submits a locally selected cover for a manual game', async () => {
+    const api = createApi()
+    vi.mocked(api.selectLocalImage).mockResolvedValueOnce(
+      'gamevault-image://local/123e4567-e89b-42d3-a456-426614174000.webp'
+    )
+    await openAddGameModal(api)
+    fireEvent.click(screen.getByRole('button', { name: 'Entrada manual' }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Elegir archivo para la carátula' }))
+    await waitFor(() =>
+      expect((screen.getByLabelText('URL de carátula (opcional)') as HTMLInputElement).value).toBe(
+        'gamevault-image://local/123e4567-e89b-42d3-a456-426614174000.webp'
+      )
+    )
+    fireEvent.change(screen.getByLabelText('Título'), { target: { value: 'Hades' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Crear ficha' }))
+
+    await waitFor(() =>
+      expect(api.createGame).toHaveBeenCalledWith(
+        expect.objectContaining({
+          coverUrl: 'gamevault-image://local/123e4567-e89b-42d3-a456-426614174000.webp'
+        })
+      )
+    )
+  })
+
+  it('keeps an existing cover when local image selection is cancelled', async () => {
+    const api = createApi([{ ...game, coverUrl: 'https://example.com/celeste.jpg' }])
+    await openEditor(api)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Elegir archivo para la carátula' }))
+
+    await waitFor(() => expect(api.selectLocalImage).toHaveBeenCalled())
+    expect((screen.getByLabelText('URL de carátula') as HTMLInputElement).value).toBe(
+      'https://example.com/celeste.jpg'
+    )
+  })
+
+  it('removes an existing game cover', async () => {
+    const api = createApi([{ ...game, coverUrl: 'https://example.com/celeste.jpg' }])
+    await openEditor(api)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Quitar carátula' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }))
+
+    await waitFor(() =>
+      expect(api.updateGame).toHaveBeenCalledWith(
+        game.id,
+        expect.objectContaining({ coverUrl: null })
+      )
+    )
+  })
+
+  it('shows local image picker failures in the current form', async () => {
+    const api = createApi()
+    vi.mocked(api.selectLocalImage).mockRejectedValueOnce(
+      new Error('La imagen es demasiado grande')
+    )
+    window.api = api
+    render(<App />)
+    await waitFor(() => expect(api.listGames).toHaveBeenCalled())
+    fireEvent.click(screen.getByRole('button', { name: 'Modificar perfil' }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Elegir archivo para el avatar' }))
+
+    expect((await screen.findByRole('alert')).textContent).toContain(
+      'La imagen es demasiado grande'
+    )
+  })
+
+  it('saves locally selected profile avatar and background images', async () => {
+    const avatar = 'gamevault-image://local/123e4567-e89b-42d3-a456-426614174000.png'
+    const background = 'gamevault-image://local/223e4567-e89b-42d3-a456-426614174000.webp'
+    const api = createApi()
+    vi.mocked(api.selectLocalImage).mockResolvedValueOnce(avatar).mockResolvedValueOnce(background)
+    window.api = api
+    render(<App />)
+    await waitFor(() => expect(api.listGames).toHaveBeenCalled())
+    fireEvent.click(screen.getByRole('button', { name: 'Modificar perfil' }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Elegir archivo para el avatar' }))
+    await waitFor(() =>
+      expect((screen.getByLabelText('URL del avatar') as HTMLInputElement).value).toBe(avatar)
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Elegir archivo para el fondo' }))
+    await waitFor(() =>
+      expect((screen.getByLabelText('URL del fondo') as HTMLInputElement).value).toBe(background)
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar perfil' }))
+
+    await waitFor(() =>
+      expect(api.updateProfile).toHaveBeenCalledWith(
+        expect.objectContaining({ avatarUrl: avatar, backgroundUrl: background })
+      )
+    )
+  })
+
   it('adds a manual game', async () => {
     const api = createApi()
     await renderLibrary(api)
@@ -385,6 +483,32 @@ describe('critical library flows', () => {
 })
 
 describe('profile showcase', () => {
+  it('shows avatar and cover fallbacks when images cannot load', async () => {
+    const api = createApi([
+      {
+        ...game,
+        coverUrl: 'gamevault-image://local/123e4567-e89b-42d3-a456-426614174000.webp'
+      }
+    ])
+    vi.mocked(api.getProfile).mockResolvedValueOnce({
+      ...profile,
+      avatarUrl: 'gamevault-image://local/223e4567-e89b-42d3-a456-426614174000.webp'
+    })
+    window.api = api
+    render(<App />)
+
+    const avatar = await screen.findByAltText('Avatar de Jugador')
+    fireEvent.error(avatar)
+    expect(screen.queryByAltText('Avatar de Jugador')).toBeNull()
+    expect(document.querySelector('.profile-avatar')?.textContent).toBe('JU')
+
+    const cover = document.querySelector<HTMLImageElement>('.summary-covers img')
+    expect(cover).toBeTruthy()
+    fireEvent.error(cover!)
+    expect(document.querySelector('.summary-covers img')).toBeNull()
+    expect(document.querySelector('.summary-covers button')?.textContent).toBe('C')
+  })
+
   it('displays every showcased game', async () => {
     const games = Array.from({ length: 7 }, (_, index) => ({
       ...game,

@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { IPC, type GameVaultApi } from '../desktop-api'
 
 const api: GameVaultApi = {
+  selectLocalImage: () => ipcRenderer.invoke(IPC.selectLocalImage),
   listGames: () => ipcRenderer.invoke(IPC.listGames),
   createGame: (input) => ipcRenderer.invoke(IPC.createGame, input),
   updateGame: (id, input) => ipcRenderer.invoke(IPC.updateGame, id, input),

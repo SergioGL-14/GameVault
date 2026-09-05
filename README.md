@@ -19,6 +19,7 @@ The application is still an early MVP. The interface is currently in Spanish bec
 - **Steam search by default**. It needs no setup and imports localized store information, artwork, and screenshots.
 - **Optional RAWG search** for games that are missing from Steam. RAWG requires the user's own API key.
 - **Manual entries** when neither catalog has the right game.
+- **Durable local artwork** selected from disk for game covers, profile avatars, and profile backgrounds.
 - **Local SQLite storage**. There is no account, cloud service, or remote library database.
 
 ## Adding a game
@@ -27,9 +28,9 @@ Open **Library → Add game** and choose one of the three sources:
 
 1. **Steam** — the normal path. Search by title and select the matching game.
 2. **RAWG** — optional fallback for games outside Steam. The key is checked before it is saved and encrypted with Electron `safeStorage`. Linux systems without a secure credential backend must use `RAWG_API_KEY` instead of saving the key.
-3. **Manual entry** — title, cover URL, and description without any external provider.
+3. **Manual entry** — title, optional cover URL or local image, and description without any external provider.
 
-Imported metadata is copied into the local database, so titles, descriptions, and personal progress remain available offline. Artwork still uses the provider's remote URLs and needs a network connection.
+Imported metadata is copied into the local database, so titles, descriptions, and personal progress remain available offline. Provider artwork still needs a network connection. Covers, avatars, and profile backgrounds selected from disk are copied into GameVault's managed `userData/images` directory and remain available if the original file moves or is deleted. PNG, JPEG, GIF, and WebP files up to 10 MiB are supported.
 
 Catalog failures do not block the local library. The add-game dialog distinguishes connection, timeout, authentication, rate-limit, invalid-input, and provider-response failures, keeps manual entry available, and lets searches be retried explicitly. Rejected RAWG credentials saved by GameVault can be replaced or removed from the same dialog. If `RAWG_API_KEY` supplies the credential, update or remove the environment variable and restart GameVault instead.
 
@@ -57,7 +58,7 @@ npm install
 npm run dev
 ```
 
-The SQLite database is created in Electron's `userData` directory. It is not stored inside the repository.
+The SQLite database and managed local image copies are created in Electron's `userData` directory. They are not stored inside the repository.
 
 ## Checks
 
@@ -100,7 +101,7 @@ Planned deliveries are tracked in [`ROADMAP.md`](ROADMAP.md) and mirrored in [Gi
 
 - Achievements are managed manually; provider synchronization and rarity data are not implemented.
 - Store-account imports (Steam library, Epic, itch.io, and others) are not implemented; games are added one at a time.
-- Covers can be replaced by URL, but there is no local image picker yet.
+- Local image copies are retained when an edit is cancelled or an image is replaced or removed. Automatic cleanup is not implemented yet because references may be shared; safe cleanup requires checking every stored reference first.
 - RAWG remains a bring-your-own-key option until the project has its own backend.
 - The current UI has one Spanish localization rather than a full translation system.
 

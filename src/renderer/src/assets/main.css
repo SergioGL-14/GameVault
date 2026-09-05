@@ -1665,6 +1665,34 @@ select:focus {
   grid-column: 1 / -1;
 }
 
+.image-field {
+  display: grid;
+  gap: 7px;
+}
+
+.image-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.image-actions .quiet-button {
+  min-height: 32px;
+  padding: 6px 12px;
+}
+
+.image-actions .text-button {
+  min-height: 32px;
+}
+
+.image-actions button:disabled {
+  opacity: 0.55;
+}
+
+form[aria-busy='true'] .image-actions button {
+  cursor: wait;
+}
+
 .check-field {
   display: flex;
   align-items: center;

@@ -26,6 +26,7 @@ export default function GameFormModal({
   const [coverUrl, setCoverUrl] = useState(game.coverUrl ?? '')
   const [showcased, setShowcased] = useState(game.showcased)
   const [busy, setBusy] = useState(false)
+  const [selectingImage, setSelectingImage] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   async function submit(event: FormEvent): Promise<void> {
@@ -61,9 +62,24 @@ export default function GameFormModal({
     }
   }
 
+  async function selectCover(): Promise<void> {
+    setBusy(true)
+    setSelectingImage(true)
+    setError(null)
+    try {
+      const selected = await window.api.selectLocalImage()
+      if (selected !== null) setCoverUrl(selected)
+    } catch (reason) {
+      setError(formatError(reason))
+    } finally {
+      setSelectingImage(false)
+      setBusy(false)
+    }
+  }
+
   return (
     <Modal className="edit-modal" labelledBy="game-modal-title" onClose={onClose} busy={busy}>
-      <form onSubmit={submit}>
+      <form onSubmit={submit} aria-busy={busy}>
         <header className="modal-header">
           <div>
             <p className="eyebrow">Ficha personal</p>
@@ -122,15 +138,38 @@ export default function GameFormModal({
               ))}
             </select>
           </label>
-          <label className="field field-wide">
-            <span>URL de carátula</span>
-            <input
-              type="url"
-              value={coverUrl}
-              onChange={(event) => setCoverUrl(event.target.value)}
-              placeholder="https://…"
-            />
-          </label>
+          <div className="image-field field-wide">
+            <label className="field">
+              <span>URL de carátula</span>
+              <input
+                type="url"
+                value={coverUrl}
+                onChange={(event) => setCoverUrl(event.target.value)}
+                placeholder="https://…"
+                disabled={busy}
+              />
+            </label>
+            <div className="image-actions">
+              <button
+                type="button"
+                className="quiet-button"
+                aria-label="Elegir archivo para la carátula"
+                onClick={() => void selectCover()}
+                disabled={busy}
+              >
+                {selectingImage ? 'Eligiendo…' : 'Elegir archivo'}
+              </button>
+              <button
+                type="button"
+                className="text-button"
+                aria-label="Quitar carátula"
+                onClick={() => setCoverUrl('')}
+                disabled={busy || !coverUrl}
+              >
+                Quitar imagen
+              </button>
+            </div>
+          </div>
           <label className="field field-wide">
             <span>Notas personales</span>
             <textarea rows={5} value={notes} onChange={(event) => setNotes(event.target.value)} />

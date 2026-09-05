@@ -1,4 +1,5 @@
 import type { Game } from '../../../library/model'
+import ImageWithFallback from '../image/ImageWithFallback'
 import { STATUS_LABELS } from './status-labels'
 
 interface GameCardProps {
@@ -17,17 +18,15 @@ export default function GameCard({ game, onOpen }: GameCardProps): React.JSX.Ele
       <div className="cover-art">
         <span className="cover-letter">{game.title.charAt(0).toUpperCase()}</span>
         {game.coverUrl ? (
-          <img
+          <ImageWithFallback
             src={game.coverUrl}
             alt=""
             loading="lazy"
-            onError={(event) => {
-              if (game.backgroundUrl && event.currentTarget.src !== game.backgroundUrl) {
-                event.currentTarget.src = game.backgroundUrl
-              } else {
-                event.currentTarget.style.display = 'none'
-              }
-            }}
+            fallback={
+              game.backgroundUrl ? (
+                <ImageWithFallback src={game.backgroundUrl} alt="" loading="lazy" fallback={null} />
+              ) : null
+            }
           />
         ) : null}
         <span className="cover-title">{game.title}</span>

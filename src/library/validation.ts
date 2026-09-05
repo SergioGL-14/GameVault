@@ -1,4 +1,5 @@
 import { GAME_STATUSES, type AchievementInput, type GameInput, type ProfileInput } from './model'
+import { parseManagedImageReference } from './managed-image'
 
 const MAX_STRING_LENGTH = 10_000
 const MAX_LONG_TEXT_LENGTH = 262_144
@@ -35,6 +36,11 @@ function validateWebUrl(
       `${label} debe ser una URL ${protocol === 'https' ? 'https' : 'http o https'} válida`
     )
   }
+}
+
+function validateManagedImageUrl(value: string | null | undefined, label: string): void {
+  if (!value || parseManagedImageReference(value)) return
+  validateWebUrl(value, label)
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -143,8 +149,8 @@ export function validateGameInput(input: unknown): asserts input is GameInput {
   ) {
     throw new ValidationError('La puntuación de Metacritic no es válida')
   }
-  validateWebUrl(input.coverUrl, 'La carátula')
-  validateWebUrl(input.backgroundUrl, 'El fondo')
+  validateManagedImageUrl(input.coverUrl, 'La carátula')
+  validateManagedImageUrl(input.backgroundUrl, 'El fondo')
   validateWebUrl(input.website, 'El sitio oficial')
   for (const screenshot of input.screenshots ?? []) {
     validateWebUrl(screenshot, 'Cada captura')
@@ -195,6 +201,6 @@ export function validateProfileInput(input: unknown): asserts input is ProfileIn
   }
   validateOptionalString(input.about, 'La biografía', false, MAX_LONG_TEXT_LENGTH)
   validateOptionalString(input.location, 'La ubicación')
-  validateWebUrl(input.avatarUrl, 'El avatar')
-  validateWebUrl(input.backgroundUrl, 'El fondo')
+  validateManagedImageUrl(input.avatarUrl, 'El avatar')
+  validateManagedImageUrl(input.backgroundUrl, 'El fondo')
 }

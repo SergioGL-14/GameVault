@@ -13,6 +13,7 @@
 - Tests for the repository, catalog providers, credential storage, and database migration.
 - Contract tests for the preload and IPC boundaries plus renderer tests for adding, editing, and deleting games.
 - Manually managed game achievements with persisted unlock state, per-game progress, and aggregate profile totals.
+- Durable local PNG, JPEG, GIF, and WebP images for game covers, profile avatars, and profile backgrounds.
 
 ### Changed
 
@@ -35,3 +36,4 @@
 - Made SQLite upgrades transactional and versioned, with strict corruption reporting and preserved foreign keys.
 - Kept successful game changes visible when a secondary refresh fails and removed the hidden six-game showcase limit.
 - Added reproducible LF formatting checks and unpacked application verification across supported build platforms.
+- Kept local image paths behind a narrow native picker and served managed copies through an opaque application protocol.

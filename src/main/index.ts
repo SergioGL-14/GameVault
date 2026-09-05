@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, dialog, safeStorage } from 'electron'
+import { app, shell, BrowserWindow, dialog, protocol, safeStorage } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../build/icon.png?asset'
@@ -8,6 +8,15 @@ import { registerIpc } from './ipc'
 import { createCatalogKeyStore } from './catalog/rawg-key-store'
 import { createRawgCatalog } from './catalog/rawg'
 import { createSteamCatalog } from './catalog/steam'
+import { MANAGED_IMAGE_SCHEME } from '../library/managed-image'
+import { createManagedImageRequestHandler, selectManagedImage } from './images/managed-images'
+
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: MANAGED_IMAGE_SCHEME,
+    privileges: { secure: true, standard: true, supportFetchAPI: true }
+  }
+])
 
 function openExternalWebUrl(url: string): void {
   try {
@@ -73,6 +82,9 @@ app.whenReady().then(() => {
   // Set app user model id for windows
   electronApp.setAppUserModelId('com.sergiogl14.gamevault')
 
+  const managedImagesDirectory = join(app.getPath('userData'), 'images')
+  protocol.handle(MANAGED_IMAGE_SCHEME, createManagedImageRequestHandler(managedImagesDirectory))
+
   // Default open or close DevTools by F12 in development
   // and ignore CommandOrControl + R in production.
   // see https://github.com/alex8088/electron-toolkit/tree/master/packages/utils
@@ -103,7 +115,15 @@ app.whenReady().then(() => {
     createLibraryRepository(db),
     createSteamCatalog(),
     createRawgCatalog(() => catalogKey.get()),
-    catalogKey
+    catalogKey,
+    () =>
+      selectManagedImage(managedImagesDirectory, async () => {
+        const selection = await dialog.showOpenDialog({
+          properties: ['openFile'],
+          filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp'] }]
+        })
+        return selection.canceled ? null : (selection.filePaths[0] ?? null)
+      })
   )
 
   createWindow()
