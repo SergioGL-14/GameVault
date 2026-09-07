@@ -17,15 +17,15 @@ The current multi-delivery design is documented in [`docs/library-achievement-pl
 - [x] [#1 Improve catalog failure and offline states](https://github.com/SergioGL-14/GameVault/issues/1)
 - [x] [#5 Make core flows keyboard and screen-reader accessible](https://github.com/SergioGL-14/GameVault/issues/5)
 - [x] [#10 Support durable local profile and game images](https://github.com/SergioGL-14/GameVault/issues/10)
+- [x] [#4 Add settings and manually refresh a Steam library](https://github.com/SergioGL-14/GameVault/issues/4)
+- [x] [#35 Synchronize Steam achievements with manual overrides](https://github.com/SergioGL-14/GameVault/issues/35)
 
 ## Next product deliveries
 
-- [ ] [#4 Add settings and manually refresh a Steam library](https://github.com/SergioGL-14/GameVault/issues/4)
-- [ ] [#35 Synchronize Steam achievements with manual overrides](https://github.com/SergioGL-14/GameVault/issues/35)
+- [ ] [#37 Add a second provider without duplicating games or achievements](https://github.com/SergioGL-14/GameVault/issues/37)
 
 ## Later
 
-- [ ] [#37 Add a second provider without duplicating games or achievements](https://github.com/SergioGL-14/GameVault/issues/37)
 - [ ] [#36 Provide optional achievement packs for games without official achievements](https://github.com/SergioGL-14/GameVault/issues/36)
 - [ ] [#8 Make the profile showcase configurable](https://github.com/SergioGL-14/GameVault/issues/8)
 - [ ] [#2 Add Spanish and English localization](https://github.com/SergioGL-14/GameVault/issues/2)
