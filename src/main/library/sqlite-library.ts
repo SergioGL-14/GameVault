@@ -1,4 +1,6 @@
 import type Database from 'better-sqlite3'
+import type { CatalogGameDetail } from '../../catalog/model'
+import { mergeMissingGameMetadata, normalizeGameTitle } from '../../library/game-metadata'
 import {
   validateAchievementInput,
   validateGameInput,
@@ -6,6 +8,7 @@ import {
 } from '../../library/validation'
 import type {
   Achievement,
+  AddGameResult,
   AchievementInput,
   Game,
   GameInput,
@@ -15,6 +18,13 @@ import type {
   Profile,
   ProfileInput
 } from '../../library/model'
+import type {
+  SteamAccount,
+  SteamAchievement,
+  SteamOwnedGame,
+  SteamOwnershipResolution,
+  SteamProfile
+} from '../../steam/model'
 
 type Row = {
   id: number
@@ -49,6 +59,11 @@ type AchievementRow = {
   icon_url: string | null
   unlocked: number
   unlocked_at: string | null
+  provider: 'steam' | null
+  provider_achievement_id: string | null
+  provider_unlocked: number | null
+  provider_unlocked_at: string | null
+  manual_override: number | null
 }
 
 function parseList(value: string, gameId: number, field: string): string[] {
@@ -61,7 +76,7 @@ function parseList(value: string, gameId: number, field: string): string[] {
   throw new Error(`Datos dañados en el juego ${gameId}: el campo "${field}" no es una lista válida`)
 }
 
-function toGame(row: Row): Game {
+function toGame(row: Row, ownedOn: Game['ownedOn'] = []): Game {
   return {
     id: row.id,
     source: row.source,
@@ -84,7 +99,8 @@ function toGame(row: Row): Game {
     metacritic: row.metacritic,
     showcased: row.showcased === 1,
     completedAt: row.completed_at,
-    addedAt: row.added_at
+    addedAt: row.added_at,
+    ownedOn
   }
 }
 
@@ -96,22 +112,41 @@ function toAchievement(row: AchievementRow): Achievement {
     description: row.description,
     iconUrl: row.icon_url,
     unlocked: row.unlocked === 1,
-    unlockedAt: row.unlocked_at
+    unlockedAt: row.unlocked_at,
+    provider: row.provider,
+    providerUnlocked: row.provider_unlocked === null ? null : row.provider_unlocked === 1,
+    manualOverride: row.manual_override === null ? null : row.manual_override === 1
   }
 }
 
 export interface LibraryRepository {
   listGames(): Game[]
+  addGame(input: GameInput): AddGameResult
+  getGame(id: number): Game | null
   createGame(input: GameInput): Game
   updateGame(id: number, input: GameInput): Game
   deleteGame(id: number): void
   listAchievements(gameId: number): Achievement[]
   createAchievement(gameId: number, input: AchievementInput): Achievement
   updateAchievement(id: number, input: AchievementInput): Achievement
+  clearAchievementOverride(id: number): Achievement
   deleteAchievement(id: number): void
   getProfile(): Profile
   updateProfile(input: ProfileInput): Profile
   getStats(): LibraryStats
+  getSteamAccount(): SteamAccount | null
+  connectSteamAccount(profile: SteamProfile): SteamAccount
+  disconnectSteamAccount(): void
+  applySteamOwnershipSnapshot(
+    games: SteamOwnedGame[],
+    resolutions: SteamOwnershipResolution[],
+    refreshedAt?: string
+  ): Game[]
+  listSteamOwnerships(): { appId: number; gameId: number }[]
+  listPendingSteamMetadata(): { appId: number; gameId: number }[]
+  applyCatalogMetadata(id: number, detail: CatalogGameDetail): Game
+  applySteamMetadata(appId: number, detail: CatalogGameDetail): Game
+  applySteamAchievementSnapshot(appId: number, achievements: SteamAchievement[]): void
 }
 
 export function createLibraryRepository(db: Database.Database): LibraryRepository {
@@ -149,9 +184,36 @@ export function createLibraryRepository(db: Database.Database): LibraryRepositor
   )
   const updateAchievementStmt = db.prepare(
     `UPDATE achievements SET name = @name, description = @description, icon_url = @icon_url,
-     unlocked = @unlocked, unlocked_at = @unlocked_at WHERE id = @id`
+      unlocked = @unlocked, unlocked_at = @unlocked_at,
+      manual_override = CASE WHEN provider = 'steam' THEN @unlocked ELSE NULL END
+      WHERE id = @id`
   )
   const deleteAchievementStmt = db.prepare('DELETE FROM achievements WHERE id = ?')
+  const clearAchievementOverrideStmt = db.prepare(
+    `UPDATE achievements SET manual_override = NULL,
+       unlocked = COALESCE(provider_unlocked, unlocked),
+       unlocked_at = CASE WHEN provider_unlocked = 1 THEN provider_unlocked_at ELSE NULL END
+     WHERE id = ? AND provider = 'steam'`
+  )
+  const ownershipsStmt = db.prepare(
+    `SELECT po.game_id, ea.provider FROM provider_ownerships po
+     JOIN external_accounts ea ON ea.id = po.external_account_id
+     WHERE po.active = 1`
+  )
+
+  function gameOwnerships(): Map<number, Game['ownedOn']> {
+    const ownerships = new Map<number, Game['ownedOn']>()
+    for (const row of ownershipsStmt.all() as { game_id: number; provider: 'steam' }[]) {
+      const providers = ownerships.get(row.game_id) ?? []
+      if (!providers.includes(row.provider)) providers.push(row.provider)
+      ownerships.set(row.game_id, providers)
+    }
+    return ownerships
+  }
+
+  function currentGame(id: number): Game {
+    return toGame(getGameStmt.get(id) as Row, gameOwnerships().get(id))
+  }
 
   function gameValues(
     input: GameInput,
@@ -199,13 +261,46 @@ export function createLibraryRepository(db: Database.Database): LibraryRepositor
 
   return {
     listGames(): Game[] {
-      return (listGamesStmt.all() as Row[]).map(toGame)
+      const ownerships = gameOwnerships()
+      return (listGamesStmt.all() as Row[]).map((row) => toGame(row, ownerships.get(row.id)))
+    },
+
+    getGame(id: number): Game | null {
+      const row = getGameStmt.get(id) as Row | undefined
+      return row ? toGame(row, gameOwnerships().get(id)) : null
+    },
+
+    addGame(input: GameInput): AddGameResult {
+      validateGameInput(input)
+      return db.transaction(() => {
+        const games = this.listGames()
+        const source = input.source ?? 'manual'
+        const exactCatalogMatch =
+          source !== 'manual' && input.catalogId != null
+            ? games.find((game) => game.source === source && game.catalogId === input.catalogId)
+            : undefined
+        const title = normalizeGameTitle(input.title)
+        const existing =
+          exactCatalogMatch ??
+          games
+            .filter(
+              (game) =>
+                (source === 'manual' || game.source === 'manual') &&
+                normalizeGameTitle(game.title) === title
+            )
+            .sort((first, second) => first.id - second.id)[0]
+        if (!existing) return { game: this.createGame(input), created: true }
+        return {
+          game: this.updateGame(existing.id, mergeMissingGameMetadata(existing, input)),
+          created: false
+        }
+      })()
     },
 
     createGame(input: GameInput): Game {
       validateGameInput(input)
       const result = insertGame.run(gameValues(input, null)) as Database.RunResult
-      return toGame(getGameStmt.get(result.lastInsertRowid) as Row)
+      return currentGame(Number(result.lastInsertRowid))
     },
 
     updateGame(id: number, input: GameInput): Game {
@@ -213,7 +308,7 @@ export function createLibraryRepository(db: Database.Database): LibraryRepositor
       const existing = getGameStmt.get(id) as Row | undefined
       if (!existing) throw new Error(`Juego ${id} no encontrado`)
       updateGameStmt.run({ ...gameValues(input, existing.completed_at), id })
-      return toGame(getGameStmt.get(id) as Row)
+      return currentGame(id)
     },
 
     deleteGame(id: number): void {
@@ -238,6 +333,13 @@ export function createLibraryRepository(db: Database.Database): LibraryRepositor
       validateAchievementInput(input)
       if (!getAchievementStmt.get(id)) throw new Error(`Logro ${id} no encontrado`)
       updateAchievementStmt.run({ id, ...achievementValues(input) })
+      return toAchievement(getAchievementStmt.get(id) as AchievementRow)
+    },
+
+    clearAchievementOverride(id: number): Achievement {
+      if (clearAchievementOverrideStmt.run(id).changes !== 1) {
+        throw new Error(`Logro de Steam ${id} no encontrado`)
+      }
       return toAchievement(getAchievementStmt.get(id) as AchievementRow)
     },
 
@@ -311,6 +413,303 @@ export function createLibraryRepository(db: Database.Database): LibraryRepositor
         totalAchievements: achievementStats.total,
         unlockedAchievements: achievementStats.unlocked
       }
+    },
+
+    getSteamAccount(): SteamAccount | null {
+      const row = db
+        .prepare(
+          `SELECT external_user_id, display_name, avatar_url, last_refreshed_at
+           FROM external_accounts WHERE provider = 'steam' AND connected = 1`
+        )
+        .get() as
+        | {
+            external_user_id: string
+            display_name: string
+            avatar_url: string | null
+            last_refreshed_at: string | null
+          }
+        | undefined
+      return row
+        ? {
+            steamId: row.external_user_id,
+            personaName: row.display_name,
+            avatarUrl: row.avatar_url,
+            lastRefreshedAt: row.last_refreshed_at
+          }
+        : null
+    },
+
+    connectSteamAccount(profile: SteamProfile): SteamAccount {
+      db.transaction(() => {
+        db.prepare("UPDATE external_accounts SET connected = 0 WHERE provider = 'steam'").run()
+        db.prepare(
+          `INSERT INTO external_accounts
+             (provider, external_user_id, display_name, avatar_url, connected)
+           VALUES ('steam', @steamId, @personaName, @avatarUrl, 1)
+           ON CONFLICT(provider, external_user_id) DO UPDATE SET
+             display_name = excluded.display_name,
+             avatar_url = excluded.avatar_url,
+             connected = 1`
+        ).run(profile)
+      })()
+      const account = this.getSteamAccount()
+      if (!account) throw new Error('No se pudo conectar la cuenta de Steam')
+      return account
+    },
+
+    disconnectSteamAccount(): void {
+      db.prepare("UPDATE external_accounts SET connected = 0 WHERE provider = 'steam'").run()
+    },
+
+    applySteamOwnershipSnapshot(
+      games: SteamOwnedGame[],
+      resolutions: SteamOwnershipResolution[],
+      refreshedAt = new Date().toISOString()
+    ): Game[] {
+      const appIds = new Set(games.map((game) => game.appId))
+      const resolutionByApp = new Map(resolutions.map((item) => [item.appId, item.gameId]))
+      const resolvedGameIds = resolutions.flatMap((item) =>
+        item.gameId === null ? [] : [item.gameId]
+      )
+      if (
+        appIds.size !== games.length ||
+        resolutionByApp.size !== resolutions.length ||
+        resolutions.length !== games.length ||
+        resolutions.some((item) => !appIds.has(item.appId))
+      ) {
+        throw new Error('La resolución de la biblioteca de Steam no está completa')
+      }
+      if (new Set(resolvedGameIds).size !== resolvedGameIds.length) {
+        throw new Error('Dos aplicaciones de Steam no pueden asociarse con la misma ficha')
+      }
+
+      db.transaction(() => {
+        const account = db
+          .prepare("SELECT id FROM external_accounts WHERE provider = 'steam' AND connected = 1")
+          .get() as { id: number } | undefined
+        if (!account) throw new Error('No hay una cuenta de Steam conectada')
+        for (const resolution of resolutions) {
+          if (resolution.gameId === null) continue
+          const conflicting = db
+            .prepare(
+              `SELECT 1 FROM provider_ownerships po
+               JOIN external_accounts ea ON ea.id = po.external_account_id
+               WHERE ea.provider = 'steam' AND po.game_id = ? AND po.provider_game_id <> ?`
+            )
+            .get(resolution.gameId, String(resolution.appId))
+          if (conflicting) {
+            throw new Error('Dos aplicaciones de Steam no pueden asociarse con la misma ficha')
+          }
+        }
+        db.prepare('UPDATE provider_ownerships SET active = 0 WHERE external_account_id = ?').run(
+          account.id
+        )
+
+        for (const game of games) {
+          let gameId = resolutionByApp.get(game.appId) ?? null
+          if (gameId === null) {
+            const input: GameInput = {
+              source: 'steam',
+              catalogId: game.appId,
+              title: game.title,
+              status: 'pendiente'
+            }
+            validateGameInput(input)
+            gameId = Number(insertGame.run(gameValues(input, null)).lastInsertRowid)
+          } else if (!getGameStmt.get(gameId)) {
+            throw new Error(`Juego ${gameId} no encontrado`)
+          }
+          db.prepare(
+            `INSERT INTO provider_ownerships
+               (external_account_id, game_id, provider_game_id, provider_title, active,
+                first_seen_at, last_seen_at)
+             VALUES (?, ?, ?, ?, 1, ?, ?)
+              ON CONFLICT(external_account_id, provider_game_id) DO UPDATE SET
+                game_id = excluded.game_id,
+                provider_title = excluded.provider_title,
+                active = 1,
+                last_seen_at = excluded.last_seen_at,
+                metadata_refreshed_at = CASE
+                  WHEN provider_ownerships.game_id = excluded.game_id
+                    THEN provider_ownerships.metadata_refreshed_at
+                  ELSE NULL
+                END`
+          ).run(account.id, gameId, String(game.appId), game.title, refreshedAt, refreshedAt)
+        }
+        db.prepare('UPDATE external_accounts SET last_refreshed_at = ? WHERE id = ?').run(
+          refreshedAt,
+          account.id
+        )
+      })()
+      return this.listGames()
+    },
+
+    listSteamOwnerships(): { appId: number; gameId: number }[] {
+      const account = db
+        .prepare("SELECT id FROM external_accounts WHERE provider = 'steam' AND connected = 1")
+        .get() as { id: number } | undefined
+      if (!account) return []
+      return db
+        .prepare(
+          `SELECT provider_game_id, game_id FROM provider_ownerships
+           WHERE external_account_id = ? AND active = 1`
+        )
+        .all(account.id)
+        .map((row) => {
+          const ownership = row as { provider_game_id: string; game_id: number }
+          return { appId: Number(ownership.provider_game_id), gameId: ownership.game_id }
+        })
+    },
+
+    listPendingSteamMetadata(): { appId: number; gameId: number }[] {
+      const account = db
+        .prepare("SELECT id FROM external_accounts WHERE provider = 'steam' AND connected = 1")
+        .get() as { id: number } | undefined
+      if (!account) return []
+      return db
+        .prepare(
+          `SELECT provider_game_id, game_id FROM provider_ownerships
+           WHERE external_account_id = ? AND metadata_refreshed_at IS NULL
+           ORDER BY id`
+        )
+        .all(account.id)
+        .map((row) => {
+          const ownership = row as { provider_game_id: string; game_id: number }
+          return { appId: Number(ownership.provider_game_id), gameId: ownership.game_id }
+        })
+    },
+
+    applyCatalogMetadata(id: number, detail: CatalogGameDetail): Game {
+      return db.transaction(() => {
+        const current = this.getGame(id)
+        if (!current) throw new Error(`Juego ${id} no encontrado`)
+        if (
+          current.source === 'manual' ||
+          current.catalogId === null ||
+          detail.source !== current.source ||
+          detail.catalogId !== current.catalogId
+        ) {
+          throw new Error('La identidad del catálogo no coincide con la ficha')
+        }
+        return this.updateGame(
+          id,
+          mergeMissingGameMetadata(current, { ...detail, status: current.status })
+        )
+      })()
+    },
+
+    applySteamMetadata(appId: number, detail: CatalogGameDetail): Game {
+      return db.transaction(() => {
+        const row = db
+          .prepare(
+            `SELECT g.*, po.id AS ownership_id, po.provider_title FROM games g
+             JOIN provider_ownerships po ON po.game_id = g.id
+             JOIN external_accounts ea ON ea.id = po.external_account_id
+             WHERE ea.provider = 'steam' AND ea.connected = 1 AND po.provider_game_id = ?`
+          )
+          .get(String(appId)) as
+          (Row & { ownership_id: number; provider_title: string }) | undefined
+        if (!row) throw new Error(`No existe propiedad Steam para la aplicación ${appId}`)
+        const current = toGame(row, ['steam'])
+        const catalogTitleCollision = this.listGames().some(
+          (game) =>
+            game.id !== current.id &&
+            normalizeGameTitle(game.title) === normalizeGameTitle(detail.title)
+        )
+        const currentMetadata =
+          detail.title === `Steam App ${appId}` ||
+          (catalogTitleCollision &&
+            normalizeGameTitle(current.title) === normalizeGameTitle(detail.title) &&
+            normalizeGameTitle(row.provider_title) !== normalizeGameTitle(detail.title))
+            ? { ...current, title: row.provider_title }
+            : current
+        const updated = this.updateGame(
+          current.id,
+          mergeMissingGameMetadata(currentMetadata, { ...detail, status: current.status })
+        )
+        db.prepare(
+          `UPDATE provider_ownerships SET metadata_refreshed_at = ?
+           WHERE id = ?`
+        ).run(new Date().toISOString(), row.ownership_id)
+        return updated
+      })()
+    },
+
+    applySteamAchievementSnapshot(appId: number, achievements: SteamAchievement[]): void {
+      const ownership = db
+        .prepare(
+          `SELECT po.game_id FROM provider_ownerships po
+           JOIN external_accounts ea ON ea.id = po.external_account_id
+           WHERE ea.provider = 'steam' AND ea.connected = 1 AND po.active = 1
+             AND po.provider_game_id = ?`
+        )
+        .get(String(appId)) as { game_id: number } | undefined
+      if (!ownership) throw new Error(`No existe propiedad Steam para la aplicación ${appId}`)
+      const ownershipCount = db
+        .prepare(
+          `SELECT COUNT(*) AS count FROM provider_ownerships po
+           JOIN external_accounts ea ON ea.id = po.external_account_id
+           WHERE ea.provider = 'steam' AND ea.connected = 1 AND po.active = 1
+             AND po.game_id = ?`
+        )
+        .get(ownership.game_id) as { count: number }
+      if (ownershipCount.count !== 1) {
+        throw new Error('No se pueden sincronizar logros de varios AppID en la misma ficha')
+      }
+
+      db.transaction(() => {
+        const existing = db
+          .prepare("SELECT * FROM achievements WHERE game_id = ? AND provider = 'steam'")
+          .all(ownership.game_id) as AchievementRow[]
+        const byProviderId = new Map(existing.map((row) => [row.provider_achievement_id, row]))
+        const incomingIds = new Set(achievements.map((achievement) => achievement.providerId))
+        const insert = db.prepare(
+          `INSERT INTO achievements
+             (game_id, name, description, icon_url, unlocked, unlocked_at,
+              provider, provider_achievement_id, provider_unlocked, provider_unlocked_at)
+            VALUES (?, ?, ?, ?, ?, ?, 'steam', ?, ?, ?)`
+        )
+        const update = db.prepare(
+          `UPDATE achievements SET name = ?, description = ?, icon_url = ?,
+             provider_unlocked = ?, provider_unlocked_at = ?, unlocked = ?, unlocked_at = ?
+             WHERE id = ?`
+        )
+        for (const achievement of achievements) {
+          const row = byProviderId.get(achievement.providerId)
+          if (!row) {
+            insert.run(
+              ownership.game_id,
+              achievement.name,
+              achievement.description,
+              achievement.iconUrl,
+              achievement.unlocked ? 1 : 0,
+              achievement.unlockedAt,
+              achievement.providerId,
+              achievement.unlocked ? 1 : 0,
+              achievement.unlockedAt
+            )
+            continue
+          }
+          const unlocked =
+            row.manual_override === null ? achievement.unlocked : row.manual_override === 1
+          update.run(
+            achievement.name,
+            achievement.description,
+            achievement.iconUrl,
+            achievement.unlocked ? 1 : 0,
+            achievement.unlockedAt,
+            unlocked ? 1 : 0,
+            row.manual_override === null ? achievement.unlockedAt : row.unlocked_at,
+            row.id
+          )
+        }
+        const remove = db.prepare('DELETE FROM achievements WHERE id = ?')
+        for (const row of existing) {
+          if (row.provider_achievement_id && !incomingIds.has(row.provider_achievement_id)) {
+            remove.run(row.id)
+          }
+        }
+      })()
     }
   }
 }

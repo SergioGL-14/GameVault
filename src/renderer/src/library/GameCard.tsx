@@ -36,6 +36,9 @@ export default function GameCard({ game, onOpen }: GameCardProps): React.JSX.Ele
         {STATUS_LABELS[game.status]}
         {game.status === 'completado' && <strong>100%</strong>}
       </span>
+      {game.ownedOn.length > 0 && (
+        <span className="ownership-badge">{game.ownedOn.join(' · ')}</span>
+      )}
     </button>
   )
 }

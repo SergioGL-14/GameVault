@@ -101,7 +101,7 @@ select:focus-visible,
   box-shadow: 0 7px 25px rgba(0, 0, 0, 0.35);
 }
 
-.brand {
+.profile-nav {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -110,20 +110,27 @@ select:focus-visible,
   border: 0;
   color: #f2f6ff;
   background: none;
-  font-size: 17px;
+  font-size: 14px;
   font-weight: 700;
-  letter-spacing: 1.8px;
+  letter-spacing: 0.2px;
 }
 
-.brand-mark {
+.profile-nav img,
+.profile-nav-fallback {
   display: grid;
-  width: 29px;
-  height: 29px;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
   place-items: center;
+  border: 1px solid rgba(118, 221, 255, 0.5);
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.profile-nav-fallback {
   color: #08111d;
   background: linear-gradient(135deg, #76ddff, #1478e8);
-  clip-path: polygon(15% 0, 100% 0, 85% 100%, 0 100%);
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 900;
 }
 
@@ -162,22 +169,30 @@ select:focus-visible,
   background: linear-gradient(90deg, #1a9fff, #77d8ff);
 }
 
-.topbar-user {
-  display: flex;
-  min-width: 150px;
-  flex-direction: column;
+.settings-nav {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
   margin-left: auto;
-  text-align: right;
-}
-
-.topbar-user span {
-  color: #d9e4f4;
-  font-size: 13px;
-}
-
-.topbar-user small {
+  padding: 8px;
+  border: 1px solid transparent;
+  border-radius: 50%;
   color: var(--dim);
-  font-size: 11px;
+  background: transparent;
+}
+
+.settings-nav:hover,
+.settings-nav.active {
+  border-color: var(--line);
+  color: white;
+  background: var(--nav-light);
+}
+
+.settings-nav svg {
+  width: 22px;
+  height: 22px;
+  fill: currentColor;
 }
 
 .content {
@@ -197,13 +212,30 @@ select:focus-visible,
   border-bottom: 1px solid #a95865;
 }
 
+.status-banner {
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 30px;
+  color: #d8efff;
+  background: #184f73;
+  border-bottom: 1px solid #2f83b9;
+}
+
 .error-banner button,
+.status-banner button,
 .icon-btn {
   padding: 2px 8px;
   border: 0;
   color: #aab4c6;
   background: transparent;
   font-size: 24px;
+}
+
+.modal-status {
+  margin: 0 0 14px;
+  color: #8dd2ff;
 }
 
 .eyebrow {
@@ -1670,6 +1702,93 @@ select:focus {
   gap: 7px;
 }
 
+.settings-page {
+  padding: 42px clamp(24px, 5vw, 72px) 72px;
+}
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+  align-items: start;
+}
+
+.settings-panel,
+.connection-card {
+  display: grid;
+  gap: 18px;
+}
+
+.settings-panel {
+  padding: 26px;
+  border: 1px solid var(--line);
+  background: rgba(12, 19, 39, 0.86);
+}
+
+.settings-message {
+  margin: 0 0 20px;
+  color: var(--green);
+}
+
+.connection-avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 4px;
+  object-fit: cover;
+}
+
+.steam-connect {
+  display: grid;
+  gap: 16px;
+}
+
+.steam-login-button {
+  justify-self: start;
+  min-width: 220px;
+}
+
+.integration-advanced {
+  margin-top: 8px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.integration-advanced summary {
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.integration-advanced form {
+  display: grid;
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.steam-preview-list {
+  display: grid;
+  gap: 10px;
+  max-height: 50vh;
+  overflow: auto;
+}
+
+.steam-preview-list > div {
+  display: grid;
+  gap: 5px;
+  padding: 12px;
+  border: 1px solid var(--line);
+}
+
+.ownership-badge {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  padding: 3px 7px;
+  background: rgba(19, 29, 52, 0.9);
+  color: var(--green);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
 .image-actions {
   display: flex;
   align-items: center;
@@ -1770,16 +1889,18 @@ form[aria-busy='true'] .image-actions button {
 }
 
 @media (max-width: 820px) {
+  .settings-grid {
+    grid-template-columns: 1fr;
+  }
   .topbar {
     padding: 0 16px;
   }
 
-  .brand {
+  .profile-nav {
     margin-right: 22px;
   }
 
-  .brand > span:last-child,
-  .topbar-user {
+  .profile-nav > span:last-child {
     display: none;
   }
 

@@ -106,12 +106,44 @@ describe('migraciones SQLite', () => {
       expect(
         migrated.prepare('SELECT name FROM achievements WHERE game_id = 1').pluck().get()
       ).toBe('Sujeto de pruebas')
-      expect(migrated.pragma('user_version', { simple: true })).toBe(1)
+      expect(migrated.pragma('user_version', { simple: true })).toBe(7)
       migrated.close()
     } finally {
       rmSync(directory, { recursive: true, force: true })
     }
   })
+
+  it.each([5, 6])(
+    'queues all existing Steam metadata once when upgrading version %s',
+    (version) => {
+      const directory = mkdtempSync(join(tmpdir(), `gamevault-v${version}-`))
+      const file = join(directory, 'library.db')
+      try {
+        const previous = openDatabase(file)
+        previous.exec(`
+        INSERT INTO games (source, catalog_id, title) VALUES ('steam', 21110, 'F.E.A.R.');
+        INSERT INTO external_accounts (provider, external_user_id, display_name)
+          VALUES ('steam', '76561198000000000', 'Jugador');
+        INSERT INTO provider_ownerships
+          (external_account_id, game_id, provider_game_id, provider_title, first_seen_at,
+           last_seen_at, metadata_refreshed_at)
+          VALUES (1, 1, '21110', 'F.E.A.R.: Extraction Point', '2026-09-06', '2026-09-06',
+                  '2026-09-06');
+        PRAGMA user_version = ${version};
+      `)
+        previous.close()
+
+        const migrated = openDatabase(file)
+        expect(
+          migrated.prepare('SELECT metadata_refreshed_at FROM provider_ownerships').pluck().get()
+        ).toBeNull()
+        expect(migrated.pragma('user_version', { simple: true })).toBe(7)
+        migrated.close()
+      } finally {
+        rmSync(directory, { recursive: true, force: true })
+      }
+    }
+  )
 
   it('creates the achievement schema for a fresh database with enforced ownership', () => {
     const db = openDatabase(':memory:')
@@ -119,7 +151,7 @@ describe('migraciones SQLite', () => {
     db.prepare("INSERT INTO achievements (game_id, name) VALUES (?, 'Primer paso')").run(gameId)
 
     expect(db.pragma('foreign_keys', { simple: true })).toBe(1)
-    expect(db.pragma('user_version', { simple: true })).toBe(1)
+    expect(db.pragma('user_version', { simple: true })).toBe(7)
     expect(db.prepare('SELECT name FROM achievements').pluck().get()).toBe('Primer paso')
     expect(() =>
       db.prepare("INSERT INTO achievements (game_id, name) VALUES (999, 'Huérfano')").run()
@@ -172,8 +204,96 @@ describe('migraciones SQLite', () => {
 
       const second = openDatabase(file)
       expect(second.prepare('SELECT title FROM games').pluck().all()).toEqual(['Portal'])
-      expect(second.pragma('user_version', { simple: true })).toBe(1)
+      expect(second.pragma('user_version', { simple: true })).toBe(7)
       second.close()
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
+  it('adds retained Steam unlock dates when upgrading schema version 3', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'gamevault-v3-'))
+    const file = join(directory, 'library.db')
+    try {
+      const previous = new Database(file)
+      createIntermediateSchema(previous)
+      previous.exec(`
+        ALTER TABLE achievements ADD COLUMN provider TEXT;
+        ALTER TABLE achievements ADD COLUMN provider_achievement_id TEXT;
+        ALTER TABLE achievements ADD COLUMN provider_unlocked INTEGER;
+        ALTER TABLE achievements ADD COLUMN manual_override INTEGER;
+        INSERT INTO games (title) VALUES ('Portal');
+        INSERT INTO achievements
+          (game_id, name, unlocked, unlocked_at, provider, provider_achievement_id,
+           provider_unlocked)
+        VALUES (1, 'Sujeto de pruebas', 1, '2026-09-06', 'steam', 'TEST', 1);
+        PRAGMA user_version = 3;
+      `)
+      previous.close()
+
+      const migrated = openDatabase(file)
+      expect(
+        migrated.prepare('SELECT provider_unlocked, provider_unlocked_at FROM achievements').get()
+      ).toEqual({ provider_unlocked: 1, provider_unlocked_at: '2026-09-06' })
+      expect(migrated.pragma('user_version', { simple: true })).toBe(7)
+      migrated.close()
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
+  it('adds external accounts and ownerships without inferring ownership from catalog provenance', () => {
+    const db = openDatabase(':memory:')
+    db.prepare(
+      "INSERT INTO games (source, catalog_id, title) VALUES ('steam', 400, 'Portal')"
+    ).run()
+
+    expect(db.prepare('SELECT COUNT(*) FROM provider_ownerships').pluck().get()).toBe(0)
+    const accountId = db
+      .prepare(
+        "INSERT INTO external_accounts (provider, external_user_id, display_name) VALUES ('steam', ?, 'Jugador')"
+      )
+      .run('76561198000000000').lastInsertRowid
+    db.prepare(
+      `INSERT INTO provider_ownerships
+       (external_account_id, game_id, provider_game_id, provider_title, first_seen_at, last_seen_at)
+       VALUES (?, 1, '400', 'Portal', '2026-09-06', '2026-09-06')`
+    ).run(accountId)
+
+    expect(db.prepare('SELECT provider_game_id FROM provider_ownerships').pluck().get()).toBe('400')
+    expect(() =>
+      db
+        .prepare(
+          "INSERT INTO external_accounts (provider, external_user_id, display_name) VALUES ('steam', '2', 'Otro')"
+        )
+        .run()
+    ).toThrow()
+    db.close()
+  })
+
+  it('creates pending metadata state for existing version 4 Steam ownerships', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'gamevault-v4-'))
+    const file = join(directory, 'library.db')
+    try {
+      const previous = openDatabase(file)
+      previous.exec(`
+        INSERT INTO games (source, catalog_id, title) VALUES ('steam', 400, 'Portal');
+        INSERT INTO external_accounts (provider, external_user_id, display_name)
+          VALUES ('steam', '76561198000000000', 'Jugador');
+        INSERT INTO provider_ownerships
+          (external_account_id, game_id, provider_game_id, provider_title, first_seen_at, last_seen_at)
+          VALUES (1, 1, '400', 'Portal', '2026-09-06', '2026-09-06');
+        ALTER TABLE provider_ownerships DROP COLUMN metadata_refreshed_at;
+        PRAGMA user_version = 4;
+      `)
+      previous.close()
+
+      const migrated = openDatabase(file)
+      expect(
+        migrated.prepare('SELECT metadata_refreshed_at FROM provider_ownerships').pluck().get()
+      ).toBeNull()
+      expect(migrated.pragma('user_version', { simple: true })).toBe(7)
+      migrated.close()
     } finally {
       rmSync(directory, { recursive: true, force: true })
     }

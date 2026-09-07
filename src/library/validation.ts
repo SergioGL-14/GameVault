@@ -40,7 +40,7 @@ function validateWebUrl(
 
 function validateManagedImageUrl(value: string | null | undefined, label: string): void {
   if (!value || parseManagedImageReference(value)) return
-  validateWebUrl(value, label)
+  validateWebUrl(value, label, 'https')
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -153,7 +153,7 @@ export function validateGameInput(input: unknown): asserts input is GameInput {
   validateManagedImageUrl(input.backgroundUrl, 'El fondo')
   validateWebUrl(input.website, 'El sitio oficial')
   for (const screenshot of input.screenshots ?? []) {
-    validateWebUrl(screenshot, 'Cada captura')
+    validateWebUrl(screenshot, 'Cada captura', 'https')
   }
 }
 

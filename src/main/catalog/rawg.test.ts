@@ -76,10 +76,14 @@ describe('catálogo RAWG', () => {
   })
 
   it('clasifica límites y respuestas malformadas sin filtrar HTTP al consumidor', async () => {
-    const limited = vi.fn(async () => new Response(null, { status: 429 }))
+    const limited = vi.fn(
+      async () => new Response(null, { status: 429, headers: { 'Retry-After': '120' } })
+    )
     await expect(
       createRawgCatalog(() => 'key', limited as typeof fetch).search('Portal')
-    ).rejects.toMatchObject({ failure: { provider: 'rawg', kind: 'rate-limit' } })
+    ).rejects.toMatchObject({
+      failure: { provider: 'rawg', kind: 'rate-limit', retryAfterSeconds: 120 }
+    })
 
     const malformed = vi.fn(async () => new Response(JSON.stringify({ unexpected: true })))
     await expect(

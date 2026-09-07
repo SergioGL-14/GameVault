@@ -19,6 +19,7 @@ The application is still an early MVP. The interface is currently in Spanish bec
 - **Steam search by default**. It needs no setup and imports localized store information, artwork, and screenshots.
 - **Optional RAWG search** for games that are missing from Steam. RAWG requires the user's own API key.
 - **Manual entries** when neither catalog has the right game.
+- **Manual Steam library refresh** from Settings, with a simple Steam web login, an advanced personal-key fallback, one canonical card per game, and retained ownership history.
 - **Durable local artwork** selected from disk for game covers, profile avatars, and profile backgrounds.
 - **Local SQLite storage**. There is no account, cloud service, or remote library database.
 
@@ -32,11 +33,23 @@ Open **Library → Add game** and choose one of the three sources:
 
 Imported metadata is copied into the local database, so titles, descriptions, and personal progress remain available offline. Provider artwork still needs a network connection. Covers, avatars, and profile backgrounds selected from disk are copied into GameVault's managed `userData/images` directory and remain available if the original file moves or is deleted. PNG, JPEG, GIF, and WebP files up to 10 MiB are supported.
 
+Adding a title already in the library reuses its existing card. GameVault first matches the exact catalog provider and ID, then falls back to the normalized title for manual entries. Only missing catalog metadata is filled; status, playtime, score, notes, featured state, achievements, and existing artwork are preserved. Catalog-backed games also provide **Actualizar metadatos** in their edit form for an explicit refresh using the saved provider identity.
+
 Catalog failures do not block the local library. The add-game dialog distinguishes connection, timeout, authentication, rate-limit, invalid-input, and provider-response failures, keeps manual entry available, and lets searches be retried explicitly. Rejected RAWG credentials saved by GameVault can be replaced or removed from the same dialog. If `RAWG_API_KEY` supplies the credential, update or remove the environment variable and restart GameVault instead.
 
-Steam's store search and app-detail endpoints currently work without authentication, but they are not documented as a stable third-party API contract. That is an accepted limitation for this MVP. The provider boundary is deliberately small so it can be replaced by a GameVault API later without changing the library model.
+Steam's store search and app-detail endpoints currently work without authentication, but they are not documented as a stable third-party API contract. Retired Store entries retain their imported title and use verified Steam CDN artwork when available; imported demos and mods are enriched like games. That is an accepted limitation for this MVP. The provider boundary is deliberately small so it can be replaced by a GameVault API later without changing the library model.
 
 More detail about both providers is in [`docs/catalog-api.md`](docs/catalog-api.md).
+
+## Settings and Steam library
+
+Open the gear-shaped **Settings** action and use the Steam integration. The normal path opens Steam's own sign-in page in an isolated Electron browser session. Password and Steam Guard input remain inside Steam's page; GameVault retains the local browser session but does not receive or store the password. A personal Web API key plus SteamID64 or profile URL remains available as an advanced fallback and is encrypted with Electron `safeStorage`.
+
+GameVault accesses the owned-games library only when **Refresh now** is selected. It shows a preview before writing, creates every new visible game, and requires confirmation before associating a title with an existing manual or catalog entry. The ownership snapshot is saved first; metadata is then completed sequentially through the existing Steam catalog using each AppID, including retained games no longer present in the latest ownership snapshot. Completed entries are not requested again unless a GameVault upgrade queues a one-time metadata correction for the complete Steam library. Pending entries resume at startup and after Steam's requested rate-limit delay without repeating ownership import; other temporary failures remain pending for the next application start. Steam Store aliases and Store titles that would collapse distinct AppIDs retain the unique title reported by ownership. Repeated refreshes update ownership without duplicating cards or replacing personal edits and local artwork. Disconnecting clears the isolated Steam session or saved key while preserving imported games and ownership history.
+
+After the library has been refreshed, **Import achievements** runs a separate per-game synchronization. Web login combines Steam's public achievement definitions with the connected account's Community pages; the personal-key fallback uses Steam's documented achievement APIs. A failed game preserves its previous achievement snapshot, and manual completed or pending overrides continue to win over imported state.
+
+Steam account refresh does not retrieve playtime, friends, activity, reviews, or social data.
 
 ## Accessibility
 
@@ -99,8 +112,10 @@ Planned deliveries are tracked in [`ROADMAP.md`](ROADMAP.md) and mirrored in [Gi
 
 ## Current limits
 
-- Achievements are managed manually; provider synchronization and rarity data are not implemented.
-- Store-account imports (Steam library, Epic, itch.io, and others) are not implemented; games are added one at a time.
+- Steam achievement synchronization is manual and does not import rarity data.
+- Steam library import is manual and supports one connected account; other account providers are not implemented.
+- One canonical game currently accepts one Steam AppID. Support for merging editions or several provider identities is deferred until a second real provider requires it.
+- Steam web login follows Playnite's practical approach and depends on Store-page session data that Valve does not document as a stable third-party contract. The personal API-key route remains available if that flow changes.
 - Local image copies are retained when an edit is cancelled or an image is replaced or removed. Automatic cleanup is not implemented yet because references may be shared; safe cleanup requires checking every stored reference first.
 - RAWG remains a bring-your-own-key option until the project has its own backend.
 - The current UI has one Spanish localization rather than a full translation system.

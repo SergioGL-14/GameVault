@@ -52,13 +52,16 @@ describe('game validation', () => {
     ).toThrow(ValidationError)
   })
 
-  it('accepts credential-free web image and website URLs', () => {
+  it('requires HTTPS for remote images while accepting HTTP websites', () => {
     const maxUrl = `https://example.com/${'a'.repeat(2_048 - 'https://example.com/'.length)}`
 
     expect(() => validateGameInput({ ...game, coverUrl: maxUrl })).not.toThrow()
     expect(() =>
       validateGameInput({ ...game, coverUrl: 'http://example.com/legacy-cover.jpg' })
-    ).not.toThrow()
+    ).toThrow(ValidationError)
+    expect(() =>
+      validateGameInput({ ...game, screenshots: ['http://example.com/screenshot.jpg'] })
+    ).toThrow(ValidationError)
     expect(() => validateGameInput({ ...game, website: 'http://example.com' })).not.toThrow()
     expect(() => validateGameInput({ ...game, website: 'https://user:pass@example.com' })).toThrow(
       ValidationError
@@ -114,14 +117,14 @@ describe('profile validation', () => {
     backgroundUrl: null
   }
 
-  it('bounds text and accepts credential-free web images', () => {
+  it('bounds text and requires HTTPS web images', () => {
     expect(() => validateProfileInput({ ...profile, about: 'a'.repeat(262_144) })).not.toThrow()
     expect(() => validateProfileInput({ ...profile, about: 'a'.repeat(262_145) })).toThrow(
       ValidationError
     )
     expect(() =>
       validateProfileInput({ ...profile, avatarUrl: 'http://example.com/avatar.jpg' })
-    ).not.toThrow()
+    ).toThrow(ValidationError)
     expect(() =>
       validateProfileInput({ ...profile, avatarUrl: 'https://user@example.com/avatar.jpg' })
     ).toThrow(ValidationError)

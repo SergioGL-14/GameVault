@@ -15,6 +15,7 @@ interface GameDetailViewProps {
   onToggleShowcase: (game: Game) => void
   onCreateAchievement: (gameId: number, input: AchievementInput) => Promise<void>
   onUpdateAchievement: (achievement: Achievement, input: AchievementInput) => Promise<void>
+  onClearAchievementOverride: (achievement: Achievement) => Promise<void>
   onDeleteAchievement: (achievement: Achievement) => Promise<void>
 }
 
@@ -28,6 +29,7 @@ export default function GameDetailView({
   onToggleShowcase,
   onCreateAchievement,
   onUpdateAchievement,
+  onClearAchievementOverride,
   onDeleteAchievement
 }: GameDetailViewProps): React.JSX.Element {
   const [achievementForm, setAchievementForm] = useState<Achievement | 'new' | null>(null)
@@ -54,6 +56,15 @@ export default function GameDetailView({
     setAchievementError(null)
     try {
       await onDeleteAchievement(achievement)
+    } catch (reason) {
+      setAchievementError(reason instanceof Error ? reason.message : String(reason))
+    }
+  }
+
+  async function clearOverride(achievement: Achievement): Promise<void> {
+    setAchievementError(null)
+    try {
+      await onClearAchievementOverride(achievement)
     } catch (reason) {
       setAchievementError(reason instanceof Error ? reason.message : String(reason))
     }
@@ -176,6 +187,9 @@ export default function GameDetailView({
                             : 'Desbloqueado'
                           : 'Bloqueado'}
                       </small>
+                      {achievement.manualOverride !== null && (
+                        <small>Estado ajustado manualmente</small>
+                      )}
                     </div>
                     <div className="achievement-actions">
                       <button
@@ -192,6 +206,11 @@ export default function GameDetailView({
                       >
                         Editar
                       </button>
+                      {achievement.manualOverride !== null && (
+                        <button type="button" onClick={() => void clearOverride(achievement)}>
+                          Usar estado de Steam
+                        </button>
+                      )}
                       <button
                         type="button"
                         className="danger-link"
@@ -260,6 +279,14 @@ export default function GameDetailView({
           <section className="facts-panel">
             <h2>Información</h2>
             <dl>
+              <div>
+                <dt>En mi biblioteca</dt>
+                <dd>
+                  {game.ownedOn
+                    .map((provider) => (provider === 'steam' ? 'Steam' : provider))
+                    .join(', ') || 'Entrada manual'}
+                </dd>
+              </div>
               <div>
                 <dt>Desarrollador</dt>
                 <dd>{game.developers.join(', ') || 'Sin datos'}</dd>

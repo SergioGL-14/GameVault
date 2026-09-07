@@ -37,7 +37,8 @@ const game: Game = {
   metacritic: null,
   showcased: false,
   completedAt: null,
-  addedAt: '2026-08-30 20:00:00'
+  addedAt: '2026-08-30 20:00:00',
+  ownedOn: []
 }
 
 function createApi(
@@ -52,7 +53,7 @@ function createApi(
     createGame: vi.fn(async (input: GameInput) => {
       const created = { ...game, ...input, id: games.length + 1 }
       games = [...games, created]
-      return created
+      return { game: created, created: true }
     }),
     updateGame: vi.fn(async (id: number, input: GameInput) => {
       const updated = { ...game, ...games.find((entry) => entry.id === id), ...input, id }
@@ -74,7 +75,10 @@ function createApi(
         description: input.description ?? '',
         iconUrl: input.iconUrl ?? null,
         unlocked: input.unlocked,
-        unlockedAt: input.unlockedAt ?? null
+        unlockedAt: input.unlockedAt ?? null,
+        provider: null,
+        providerUnlocked: null,
+        manualOverride: null
       }
       achievements = [...achievements, created]
       return created
@@ -87,7 +91,20 @@ function createApi(
         ...input,
         description: input.description ?? '',
         iconUrl: input.iconUrl ?? null,
-        unlockedAt: input.unlockedAt ?? null
+        unlockedAt: input.unlockedAt ?? null,
+        manualOverride: existing.provider === 'steam' ? input.unlocked : null
+      }
+      achievements = achievements.map((entry) => (entry.id === id ? updated : entry))
+      return updated
+    }),
+    clearAchievementOverride: vi.fn(async (id: number) => {
+      const existing = achievements.find((entry) => entry.id === id)
+      if (!existing || existing.provider !== 'steam')
+        throw new Error('Logro de Steam no encontrado')
+      const updated = {
+        ...existing,
+        unlocked: existing.providerUnlocked ?? existing.unlocked,
+        manualOverride: null
       }
       achievements = achievements.map((entry) => (entry.id === id ? updated : entry))
       return updated
@@ -113,7 +130,30 @@ function createApi(
     clearCatalogKey: vi.fn(async () => ({ configured: false, source: null })),
     searchCatalog: vi.fn(async () => ({ ok: true as const, value: [] })),
     getCatalogGame: vi.fn(),
-    selectLocalImage: vi.fn(async () => null)
+    refreshGameMetadata: vi.fn(async (id: number) => ({
+      ok: true as const,
+      value: games.find((entry) => entry.id === id) ?? game
+    })),
+    selectLocalImage: vi.fn(async () => null),
+    getSteamConnection: vi.fn(async () => ({
+      configured: false,
+      credentialSource: null,
+      account: null
+    })),
+    connectSteamWeb: vi.fn(),
+    connectSteamApiKey: vi.fn(),
+    disconnectSteam: vi.fn(async () => ({
+      configured: false,
+      credentialSource: null,
+      account: null
+    })),
+    previewSteamRefresh: vi.fn(),
+    applySteamRefresh: vi.fn(),
+    refreshSteamMetadata: vi.fn(async () => ({
+      ok: true as const,
+      value: { games, metadataUpdated: 0, failures: [], pending: 0 }
+    })),
+    refreshSteamAchievements: vi.fn()
   }
 }
 
@@ -223,15 +263,63 @@ describe('core accessibility', () => {
     await waitFor(() => expect(document.activeElement).toBe(restoredCard))
   })
 
-  it('names the profile editor dialog', async () => {
+  it('shows the libraries where a game is owned in its information panel', async () => {
+    const api = createApi([{ ...game, ownedOn: ['steam'] }])
+    await renderLibrary(api)
+    fireEvent.click(await screen.findByRole('button', { name: /Celeste/ }))
+
+    expect(screen.getByText('En mi biblioteca').nextElementSibling?.textContent).toBe('Steam')
+  })
+
+  it('moves profile editing into the Settings destination', async () => {
     const api = createApi()
     window.api = api
     render(<App />)
     await waitFor(() => expect(api.listGames).toHaveBeenCalled())
-    fireEvent.click(screen.getByRole('button', { name: 'Modificar perfil' }))
+    expect(screen.queryByRole('button', { name: 'Modificar perfil' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir configuración' }))
 
-    expect(screen.getByRole('dialog', { name: 'Modificar perfil' })).toBeTruthy()
-    expect(document.activeElement).toBe(screen.getByLabelText('Nombre'))
+    expect(await screen.findByRole('heading', { name: 'Configuración' })).toBeTruthy()
+    expect(screen.getByLabelText('Nombre del perfil')).toBeTruthy()
+  })
+
+  it('uses the local profile and a compact settings action for primary navigation', async () => {
+    const api = createApi()
+    window.api = api
+    render(<App />)
+    await waitFor(() => expect(api.getProfile).toHaveBeenCalled())
+
+    expect(screen.getByRole('button', { name: 'Ir al perfil' }).textContent).toContain(
+      profile.displayName
+    )
+    expect(screen.queryByText('GAMEVAULT')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'PERFIL' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Abrir configuración' })).toBeTruthy()
+  })
+
+  it('updates Settings when the persisted profile finishes loading', async () => {
+    const api = createApi()
+    let resolveProfile: ((value: typeof profile) => void) | undefined
+    vi.mocked(api.getProfile).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveProfile = resolve
+        })
+    )
+    window.api = api
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir configuración' }))
+    expect(screen.queryByLabelText('Nombre del perfil')).toBeNull()
+    expect(screen.getByText('Cargando configuración...')).toBeTruthy()
+
+    await act(async () => resolveProfile?.({ ...profile, displayName: 'Perfil persistido' }))
+
+    await waitFor(() =>
+      expect((screen.getByLabelText('Nombre del perfil') as HTMLInputElement).value).toBe(
+        'Perfil persistido'
+      )
+    )
+    expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Configuración' }))
   })
 
   it('announces asynchronous form failures as alerts', async () => {
@@ -264,6 +352,454 @@ describe('core accessibility', () => {
 })
 
 describe('critical library flows', () => {
+  it('updates and reports an existing game instead of duplicating it', async () => {
+    const api = createApi([game])
+    vi.mocked(api.createGame).mockResolvedValueOnce({
+      game: { ...game, description: 'Descripción añadida' },
+      created: false
+    })
+    await renderLibrary(api)
+    fireEvent.click(screen.getByRole('button', { name: 'Añadir juego' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Entrada manual' }))
+    fireEvent.change(screen.getByLabelText('Título'), { target: { value: 'Celeste' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Crear ficha' }))
+
+    expect(await screen.findByText(/ya estaba en tu biblioteca/)).toBeTruthy()
+    expect(api.createGame).toHaveBeenCalledOnce()
+    fireEvent.click(screen.getByRole('button', { name: '← Biblioteca' }))
+    expect(screen.getAllByRole('button', { name: /Celeste/ })).toHaveLength(1)
+  })
+
+  it('refreshes catalog metadata from the edit modal', async () => {
+    const providerGame = { ...game, source: 'steam' as const, catalogId: 400 }
+    const api = createApi([providerGame])
+    vi.mocked(api.refreshGameMetadata).mockResolvedValueOnce({
+      ok: true,
+      value: {
+        ...providerGame,
+        description: 'Descripción de Steam',
+        coverUrl: 'https://images/portal.jpg'
+      }
+    })
+    await openEditor(api)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Actualizar metadatos' }))
+
+    expect(await screen.findByText('Metadatos actualizados.')).toBeTruthy()
+    expect(api.refreshGameMetadata).toHaveBeenCalledWith(providerGame.id)
+    expect((screen.getByLabelText('URL de carátula') as HTMLInputElement).value).toBe(
+      'https://images/portal.jpg'
+    )
+  })
+
+  it('preserves metadata completed in the background when the editor saves', async () => {
+    const providerGame = { ...game, source: 'steam' as const, catalogId: 400 }
+    const enriched = { ...providerGame, description: 'Descripción de Steam' }
+    let completeRefresh!: (value: Awaited<ReturnType<GameVaultApi['refreshSteamMetadata']>>) => void
+    const api = createApi([providerGame])
+    vi.mocked(api.getSteamConnection).mockResolvedValue({
+      configured: true,
+      credentialSource: 'web-session',
+      account: {
+        steamId: '76561198000000000',
+        personaName: 'Jugador Steam',
+        avatarUrl: null,
+        lastRefreshedAt: '2026-09-07T10:00:00.000Z'
+      }
+    })
+    vi.mocked(api.refreshSteamMetadata).mockReturnValue(
+      new Promise((resolve) => {
+        completeRefresh = resolve
+      })
+    )
+    await openEditor(api)
+    fireEvent.change(screen.getByLabelText('Notas personales'), {
+      target: { value: 'Mi nota' }
+    })
+
+    await waitFor(() => expect(api.refreshSteamMetadata).toHaveBeenCalled())
+    await act(async () => {
+      completeRefresh({
+        ok: true,
+        value: { games: [enriched], metadataUpdated: 1, failures: [], pending: 0 }
+      })
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }))
+
+    await waitFor(() =>
+      expect(api.updateGame).toHaveBeenCalledWith(
+        providerGame.id,
+        expect.objectContaining({ description: 'Descripción de Steam', notes: 'Mi nota' })
+      )
+    )
+  })
+
+  it('does not offer catalog refresh for a manual game', async () => {
+    const api = createApi([game])
+    await openEditor(api)
+
+    expect(screen.queryByRole('button', { name: 'Actualizar metadatos' })).toBeNull()
+  })
+
+  it('connects Steam through its web login without refreshing automatically', async () => {
+    const api = createApi()
+    vi.mocked(api.connectSteamWeb).mockResolvedValueOnce({
+      ok: true,
+      value: {
+        configured: true,
+        credentialSource: 'web-session',
+        account: {
+          steamId: '76561198000000000',
+          personaName: 'Jugador Steam',
+          avatarUrl: null,
+          lastRefreshedAt: null
+        }
+      }
+    })
+    window.api = api
+    render(<App />)
+    await waitFor(() => expect(api.listGames).toHaveBeenCalled())
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir configuración' }))
+    expect(api.previewSteamRefresh).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Iniciar sesión con Steam' }))
+
+    await screen.findByRole('button', { name: 'Refrescar ahora' })
+    expect(api.connectSteamWeb).toHaveBeenCalledWith()
+    expect(api.previewSteamRefresh).not.toHaveBeenCalled()
+  })
+
+  it('keeps the personal API key as an advanced Steam fallback', async () => {
+    const api = createApi()
+    vi.mocked(api.connectSteamApiKey).mockResolvedValueOnce({
+      ok: true,
+      value: {
+        configured: true,
+        credentialSource: 'api-key',
+        account: {
+          steamId: '76561198000000000',
+          personaName: 'Jugador Steam',
+          avatarUrl: null,
+          lastRefreshedAt: null
+        }
+      }
+    })
+    window.api = api
+    render(<App />)
+    await waitFor(() => expect(api.listGames).toHaveBeenCalled())
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir configuración' }))
+    fireEvent.click(screen.getByText('Usar API key (avanzado)'))
+
+    const keyInput = screen.getByLabelText('Web API key') as HTMLInputElement
+    expect(keyInput.type).toBe('password')
+    fireEvent.change(screen.getByLabelText('SteamID64 o URL del perfil'), {
+      target: { value: '76561198000000000' }
+    })
+    fireEvent.change(keyInput, { target: { value: 'secret' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Conectar con API key' }))
+
+    await screen.findByRole('button', { name: 'Refrescar ahora' })
+    expect(api.connectSteamApiKey).toHaveBeenCalledWith('76561198000000000', 'secret')
+    expect(screen.queryByLabelText('Web API key')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Desconectar Steam' }))
+    await waitFor(() =>
+      expect((screen.getByLabelText('Web API key') as HTMLInputElement).value).toBe('')
+    )
+    expect(api.previewSteamRefresh).not.toHaveBeenCalled()
+  })
+
+  it('requires ambiguous Steam games to be resolved before applying a refresh', async () => {
+    const api = createApi([game])
+    vi.mocked(api.getSteamConnection).mockResolvedValue({
+      configured: true,
+      credentialSource: 'web-session',
+      account: {
+        steamId: '76561198000000000',
+        personaName: 'Jugador Steam',
+        avatarUrl: null,
+        lastRefreshedAt: null
+      }
+    })
+    vi.mocked(api.previewSteamRefresh).mockResolvedValueOnce({
+      ok: true,
+      value: {
+        previewId: 'preview',
+        items: [
+          {
+            kind: 'confirmation',
+            game: { appId: 400, title: 'Celeste' },
+            candidates: [{ gameId: game.id, title: game.title }]
+          }
+        ]
+      }
+    })
+    vi.mocked(api.applySteamRefresh).mockResolvedValueOnce({
+      ok: true,
+      value: {
+        games: [{ ...game, ownedOn: ['steam'] }]
+      }
+    })
+    vi.mocked(api.refreshSteamMetadata).mockResolvedValueOnce({
+      ok: true,
+      value: {
+        games: [{ ...game, ownedOn: ['steam'] }],
+        metadataUpdated: 1,
+        failures: [],
+        pending: 0
+      }
+    })
+    window.api = api
+    render(<App />)
+    await waitFor(() => expect(api.listGames).toHaveBeenCalled())
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir configuración' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Refrescar ahora' }))
+
+    const apply = await screen.findByRole('button', { name: 'Aplicar refresco' })
+    expect(apply.hasAttribute('disabled')).toBe(true)
+    fireEvent.change(screen.getByLabelText('Asociar Celeste con'), {
+      target: { value: String(game.id) }
+    })
+    expect(apply.hasAttribute('disabled')).toBe(false)
+    fireEvent.click(apply)
+
+    await waitFor(() =>
+      expect(api.applySteamRefresh).toHaveBeenCalledWith({
+        previewId: 'preview',
+        resolutions: [{ appId: 400, gameId: game.id }]
+      })
+    )
+    expect(api.refreshSteamMetadata).toHaveBeenCalledOnce()
+    fireEvent.click(screen.getByRole('button', { name: 'BIBLIOTECA' }))
+    expect((await screen.findByRole('button', { name: /Celeste/ })).textContent).toContain('steam')
+  })
+
+  it('resumes pending Steam metadata after startup', async () => {
+    const api = createApi([game])
+    vi.mocked(api.getSteamConnection).mockResolvedValue({
+      configured: true,
+      credentialSource: 'web-session',
+      account: {
+        steamId: '76561198000000000',
+        personaName: 'Jugador Steam',
+        avatarUrl: null,
+        lastRefreshedAt: '2026-09-06T10:00:00.000Z'
+      }
+    })
+
+    window.api = api
+    render(<App />)
+
+    await waitFor(() => expect(api.refreshSteamMetadata).toHaveBeenCalledOnce())
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir configuración' }))
+    expect(await screen.findByText(/Todos los metadatos están al día/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Desconectar Steam' }))
+    await waitFor(() => expect(screen.queryByText(/Todos los metadatos están al día/)).toBeNull())
+  })
+
+  it('retries pending Steam metadata after the provider rate limit', async () => {
+    vi.useFakeTimers()
+    try {
+      const api = createApi([game])
+      vi.mocked(api.getSteamConnection).mockResolvedValue({
+        configured: true,
+        credentialSource: 'web-session',
+        account: {
+          steamId: '76561198000000000',
+          personaName: 'Jugador Steam',
+          avatarUrl: null,
+          lastRefreshedAt: '2026-09-06T10:00:00.000Z'
+        }
+      })
+      vi.mocked(api.refreshSteamMetadata)
+        .mockResolvedValueOnce({
+          ok: true,
+          value: {
+            games: [game],
+            metadataUpdated: 0,
+            failures: [
+              {
+                appId: 400,
+                title: 'Portal',
+                error: { provider: 'steam', kind: 'rate-limit', retryAfterSeconds: 1 }
+              }
+            ],
+            pending: 0
+          }
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          value: { games: [game], metadataUpdated: 1, failures: [], pending: 0 }
+        })
+      vi.mocked(api.previewSteamRefresh).mockResolvedValueOnce({
+        ok: true,
+        value: { previewId: 'empty', items: [] }
+      })
+      vi.mocked(api.applySteamRefresh).mockResolvedValueOnce({
+        ok: true,
+        value: { games: [{ ...game, ownedOn: ['steam'] }] }
+      })
+
+      window.api = api
+      render(<App />)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      expect(api.refreshSteamMetadata).toHaveBeenCalledOnce()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Abrir configuración' }))
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      fireEvent.click(screen.getByRole('button', { name: 'Refrescar ahora' }))
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      fireEvent.click(screen.getByRole('button', { name: 'Aplicar refresco' }))
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      expect(api.refreshSteamMetadata).toHaveBeenCalledOnce()
+      fireEvent.click(screen.getByRole('button', { name: 'BIBLIOTECA' }))
+      expect(screen.getByRole('button', { name: /Celeste/ }).textContent).toContain('steam')
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1_000)
+      })
+      expect(api.refreshSteamMetadata).toHaveBeenCalledTimes(2)
+      fireEvent.click(screen.getByRole('button', { name: 'Abrir configuración' }))
+      expect(screen.getByText(/Todos los metadatos están al día/)).toBeTruthy()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps a queued metadata pass behind the provider rate-limit delay', async () => {
+    const api = createApi([game])
+    let resolveMetadata:
+      ((value: Awaited<ReturnType<GameVaultApi['refreshSteamMetadata']>>) => void) | undefined
+    vi.mocked(api.getSteamConnection).mockResolvedValue({
+      configured: true,
+      credentialSource: 'web-session',
+      account: {
+        steamId: '76561198000000000',
+        personaName: 'Jugador Steam',
+        avatarUrl: null,
+        lastRefreshedAt: '2026-09-06T10:00:00.000Z'
+      }
+    })
+    vi.mocked(api.refreshSteamMetadata)
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveMetadata = resolve
+          })
+      )
+      .mockResolvedValueOnce({
+        ok: true,
+        value: { games: [game], metadataUpdated: 1, failures: [], pending: 0 }
+      })
+    vi.mocked(api.previewSteamRefresh).mockResolvedValueOnce({
+      ok: true,
+      value: { previewId: 'empty', items: [] }
+    })
+    vi.mocked(api.applySteamRefresh).mockResolvedValueOnce({
+      ok: true,
+      value: { games: [{ ...game, ownedOn: ['steam'] }] }
+    })
+
+    window.api = api
+    render(<App />)
+    await waitFor(() => expect(api.refreshSteamMetadata).toHaveBeenCalledOnce())
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir configuración' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Refrescar ahora' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Aplicar refresco' }))
+    await screen.findByText(/Completando metadatos/)
+
+    vi.useFakeTimers()
+    try {
+      await act(async () => {
+        resolveMetadata?.({
+          ok: true,
+          value: {
+            games: [game],
+            metadataUpdated: 0,
+            failures: [
+              {
+                appId: 400,
+                title: 'Portal',
+                error: { provider: 'steam', kind: 'rate-limit', retryAfterSeconds: 1 }
+              }
+            ],
+            pending: 0
+          }
+        })
+      })
+      await vi.advanceTimersByTimeAsync(999)
+      expect(api.refreshSteamMetadata).toHaveBeenCalledOnce()
+
+      await vi.advanceTimersByTimeAsync(1)
+      expect(api.refreshSteamMetadata).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('imports Steam achievements through a separate explicit action', async () => {
+    const api = createApi([game])
+    vi.mocked(api.getSteamConnection).mockResolvedValue({
+      configured: true,
+      credentialSource: 'web-session',
+      account: {
+        steamId: '76561198000000000',
+        personaName: 'Jugador Steam',
+        avatarUrl: null,
+        lastRefreshedAt: '2026-09-06T10:00:00.000Z'
+      }
+    })
+    vi.mocked(api.refreshSteamAchievements).mockResolvedValue({
+      ok: true,
+      value: { gamesUpdated: 1, failures: [], pending: 0 }
+    })
+    window.api = api
+    render(<App />)
+    await waitFor(() => expect(api.listGames).toHaveBeenCalled())
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir configuración' }))
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Importar logros' }))
+
+    expect(await screen.findByText('1 juego con logros revisados.')).toBeTruthy()
+    expect(api.refreshSteamAchievements).toHaveBeenCalledOnce()
+    await waitFor(() => expect(api.getStats).toHaveBeenCalledTimes(2))
+    expect(api.previewSteamRefresh).not.toHaveBeenCalled()
+  })
+
+  it('warns before applying an explicitly empty Steam snapshot', async () => {
+    const api = createApi()
+    vi.mocked(api.getSteamConnection).mockResolvedValue({
+      configured: true,
+      credentialSource: 'web-session',
+      account: {
+        steamId: '76561198000000000',
+        personaName: 'Jugador Steam',
+        avatarUrl: null,
+        lastRefreshedAt: '2026-09-06T10:00:00.000Z'
+      }
+    })
+    vi.mocked(api.previewSteamRefresh).mockResolvedValueOnce({
+      ok: true,
+      value: { previewId: 'empty', items: [] }
+    })
+    window.api = api
+    render(<App />)
+    await waitFor(() => expect(api.listGames).toHaveBeenCalled())
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir configuración' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Refrescar ahora' }))
+
+    expect((await screen.findByRole('alert')).textContent).toContain('biblioteca vacía')
+    expect(screen.getByRole('button', { name: 'Aplicar refresco' }).hasAttribute('disabled')).toBe(
+      false
+    )
+  })
+
   it('submits a locally selected cover for a manual game', async () => {
     const api = createApi()
     vi.mocked(api.selectLocalImage).mockResolvedValueOnce(
@@ -325,7 +861,7 @@ describe('critical library flows', () => {
     window.api = api
     render(<App />)
     await waitFor(() => expect(api.listGames).toHaveBeenCalled())
-    fireEvent.click(screen.getByRole('button', { name: 'Modificar perfil' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir configuración' }))
 
     fireEvent.click(screen.getByRole('button', { name: 'Elegir archivo para el avatar' }))
 
@@ -342,7 +878,7 @@ describe('critical library flows', () => {
     window.api = api
     render(<App />)
     await waitFor(() => expect(api.listGames).toHaveBeenCalled())
-    fireEvent.click(screen.getByRole('button', { name: 'Modificar perfil' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir configuración' }))
 
     fireEvent.click(screen.getByRole('button', { name: 'Elegir archivo para el avatar' }))
     await waitFor(() =>
@@ -728,7 +1264,10 @@ describe('achievement flows', () => {
           description: '',
           iconUrl: null,
           unlocked: true,
-          unlockedAt: null
+          unlockedAt: null,
+          provider: null,
+          providerUnlocked: null,
+          manualOverride: null
         }
       ]
     )
@@ -736,6 +1275,30 @@ describe('achievement flows', () => {
     render(<App />)
 
     expect(await screen.findByText('1 / 1')).toBeTruthy()
+  })
+
+  it('returns a manually adjusted achievement to its Steam state', async () => {
+    const imported: Achievement = {
+      id: 1,
+      gameId: game.id,
+      name: 'Corazón de cristal',
+      description: '',
+      iconUrl: null,
+      unlocked: true,
+      unlockedAt: null,
+      provider: 'steam',
+      providerUnlocked: false,
+      manualOverride: true
+    }
+    const api = createApi([game], [imported])
+    await renderLibrary(api)
+    fireEvent.click(await screen.findByRole('button', { name: /Celeste/ }))
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Usar estado de Steam' }))
+
+    await waitFor(() => expect(api.clearAchievementOverride).toHaveBeenCalledWith(imported.id))
+    expect(await screen.findByText('Bloqueado')).toBeTruthy()
+    expect(screen.queryByText('Estado ajustado manualmente')).toBeNull()
   })
 
   it('does not apply an in-flight achievement update after opening another game', async () => {
@@ -747,7 +1310,10 @@ describe('achievement flows', () => {
       description: '',
       iconUrl: null,
       unlocked: false,
-      unlockedAt: null
+      unlockedAt: null,
+      provider: null,
+      providerUnlocked: null,
+      manualOverride: null
     }
     const portalAchievement: Achievement = {
       ...achievement,
@@ -802,7 +1368,10 @@ describe('achievement flows', () => {
         description: '',
         iconUrl: null,
         unlocked: false,
-        unlockedAt: null
+        unlockedAt: null,
+        provider: null,
+        providerUnlocked: null,
+        manualOverride: null
       }
     ])
 

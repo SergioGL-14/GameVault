@@ -33,6 +33,11 @@ const mocks = vi.hoisted(() => {
     protocolHandle: vi.fn(),
     setAppUserModelId: vi.fn(),
     watchWindowShortcuts: vi.fn(),
+    steamSession: {
+      setPermissionRequestHandler: vi.fn(),
+      clearStorageData: vi.fn(() => Promise.resolve()),
+      clearCache: vi.fn(() => Promise.resolve())
+    },
     openDatabase: vi.fn(() => ({ database: true })),
     registerIpc:
       vi.fn<
@@ -75,7 +80,8 @@ vi.mock('electron', () => ({
     encryptString: vi.fn(),
     decryptString: vi.fn()
   },
-  shell: { openExternal: mocks.openExternal }
+  shell: { openExternal: mocks.openExternal },
+  session: { fromPartition: vi.fn(() => mocks.steamSession) }
 }))
 vi.mock('@electron-toolkit/utils', () => ({
   electronApp: { setAppUserModelId: mocks.setAppUserModelId },

@@ -10,6 +10,10 @@ import { createRawgCatalog } from './catalog/rawg'
 import { createSteamCatalog } from './catalog/steam'
 import { MANAGED_IMAGE_SCHEME } from '../library/managed-image'
 import { createManagedImageRequestHandler, selectManagedImage } from './images/managed-images'
+import { createSteamKeyStore } from './steam/key-store'
+import { createSteamAccountProvider } from './steam/web-api'
+import { createSteamLibraryRefresh } from './steam/library-refresh'
+import { createSteamWebSession } from './steam/web-session'
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -111,9 +115,19 @@ app.whenReady().then(() => {
       safeStorage.isEncryptionAvailable() &&
       (process.platform !== 'linux' || safeStorage.getSelectedStorageBackend() !== 'basic_text')
   )
+  const steamKey = createSteamKeyStore(
+    join(app.getPath('userData'), 'steam-web-api-key.bin'),
+    safeStorage,
+    () =>
+      safeStorage.isEncryptionAvailable() &&
+      (process.platform !== 'linux' || safeStorage.getSelectedStorageBackend() !== 'basic_text')
+  )
+  const repository = createLibraryRepository(db)
+  const steamCatalog = createSteamCatalog()
+  const steamSession = createSteamWebSession()
   registerIpc(
-    createLibraryRepository(db),
-    createSteamCatalog(),
+    repository,
+    steamCatalog,
     createRawgCatalog(() => catalogKey.get()),
     catalogKey,
     () =>
@@ -123,7 +137,14 @@ app.whenReady().then(() => {
           filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp'] }]
         })
         return selection.canceled ? null : (selection.filePaths[0] ?? null)
-      })
+      }),
+    createSteamLibraryRefresh(
+      repository,
+      steamKey,
+      createSteamAccountProvider(fetch, steamSession.getCommunityAchievements),
+      steamSession,
+      steamCatalog
+    )
   )
 
   createWindow()

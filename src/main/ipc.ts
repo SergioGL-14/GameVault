@@ -15,6 +15,11 @@ import {
 } from '../library/validation'
 import type { CatalogKeyStore } from './catalog/rawg-key-store'
 import type { LibraryRepository } from './library/sqlite-library'
+import type { SteamLibraryRefresh } from './steam/library-refresh'
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
 
 /** Registers the narrow desktop API and validates every renderer-supplied argument before use. */
 export function registerIpc(
@@ -22,7 +27,8 @@ export function registerIpc(
   steamCatalog: GameCatalog,
   rawgCatalog: AuthenticatedGameCatalog,
   catalogKey: CatalogKeyStore,
-  selectLocalImage: () => Promise<string | null>
+  selectLocalImage: () => Promise<string | null>,
+  steamLibrary: SteamLibraryRefresh
 ): void {
   function positiveInteger(value: unknown, label: string): asserts value is number {
     if (!Number.isSafeInteger(value) || (value as number) <= 0) {
@@ -52,10 +58,52 @@ export function registerIpc(
   }
 
   ipcMain.handle(IPC.selectLocalImage, () => selectLocalImage())
+  ipcMain.handle(IPC.steamConnection, () => steamLibrary.status())
+  ipcMain.handle(IPC.connectSteamWeb, () => steamLibrary.connectWeb())
+  ipcMain.handle(IPC.connectSteamApiKey, (_event, profileInput: unknown, key: unknown) => {
+    if (
+      typeof profileInput !== 'string' ||
+      !profileInput.trim() ||
+      profileInput.length > 512 ||
+      typeof key !== 'string' ||
+      !key.trim() ||
+      key.length > 256
+    ) {
+      throw new ValidationError('La conexión de Steam no es válida')
+    }
+    return steamLibrary.connectWithApiKey(profileInput, key)
+  })
+  ipcMain.handle(IPC.disconnectSteam, () => steamLibrary.disconnect())
+  ipcMain.handle(IPC.previewSteamRefresh, () => steamLibrary.preview())
+  ipcMain.handle(IPC.applySteamRefresh, (_event, input: unknown) => {
+    if (
+      !isRecord(input) ||
+      typeof input.previewId !== 'string' ||
+      !Array.isArray(input.resolutions)
+    ) {
+      throw new ValidationError('La confirmación de Steam no es válida')
+    }
+    if (input.previewId.length > 128 || input.resolutions.length > 100_000) {
+      throw new ValidationError('La confirmación de Steam no es válida')
+    }
+    const seen = new Set<number>()
+    const resolutions = input.resolutions.map((value) => {
+      if (!isRecord(value)) throw new ValidationError('La confirmación de Steam no es válida')
+      positiveInteger(value.appId, 'El identificador de Steam')
+      if (value.gameId !== null) positiveInteger(value.gameId, 'El identificador del juego')
+      if (seen.has(value.appId))
+        throw new ValidationError('La confirmación de Steam está duplicada')
+      seen.add(value.appId)
+      return { appId: value.appId, gameId: value.gameId }
+    })
+    return steamLibrary.apply({ previewId: input.previewId, resolutions })
+  })
+  ipcMain.handle(IPC.refreshSteamMetadata, () => steamLibrary.refreshMetadata())
+  ipcMain.handle(IPC.refreshSteamAchievements, () => steamLibrary.refreshAchievements())
   ipcMain.handle(IPC.listGames, () => repo.listGames())
   ipcMain.handle(IPC.createGame, (_event, input: unknown) => {
     validateGameInput(input)
-    return repo.createGame(input)
+    return repo.addGame(input)
   })
   ipcMain.handle(IPC.updateGame, (_event, id: unknown, input: unknown) => {
     positiveInteger(id, 'El identificador del juego')
@@ -79,6 +127,10 @@ export function registerIpc(
     positiveInteger(id, 'El identificador del logro')
     validateAchievementInput(input)
     return repo.updateAchievement(id, input)
+  })
+  ipcMain.handle(IPC.clearAchievementOverride, (_event, id: unknown) => {
+    positiveInteger(id, 'El identificador del logro')
+    return repo.clearAchievementOverride(id)
   })
   ipcMain.handle(IPC.deleteAchievement, (_event, id: unknown) => {
     positiveInteger(id, 'El identificador del logro')
@@ -124,5 +176,24 @@ export function registerIpc(
       }
       return selected.catalog.getGame(catalogId as number)
     })
+  })
+  ipcMain.handle(IPC.refreshGameMetadata, async (_event, id: unknown) => {
+    positiveInteger(id, 'El identificador del juego')
+    const game = repo.getGame(id)
+    if (!game || game.source === 'manual' || game.catalogId === null) {
+      throw new ValidationError('El juego no tiene una identidad de catálogo')
+    }
+    const selected = catalogFor(game.source)
+    const result = await catalogResult(selected.provider, () =>
+      selected.catalog.getGame(game.catalogId as number)
+    )
+    if (!result.ok) return result
+    if (result.value.source !== game.source || result.value.catalogId !== game.catalogId) {
+      return {
+        ok: false,
+        error: { provider: selected.provider, kind: 'provider-response' as const }
+      }
+    }
+    return { ok: true, value: repo.applyCatalogMetadata(id, result.value) }
   })
 }
