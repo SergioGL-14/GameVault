@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type { CatalogResult } from '../../catalog/model'
 import type {
   Achievement,
   AchievementInput,
@@ -8,6 +9,7 @@ import type {
   Profile,
   ProfileInput
 } from '../../library/model'
+import type { SteamMetadataRefresh } from '../../steam/model'
 import AddGameModal from './catalog/AddGameModal'
 import { formatError } from './format'
 import GameDetailView from './library/GameDetailView'
@@ -15,8 +17,9 @@ import GameFormModal from './library/GameFormModal'
 import LibraryView from './library/LibraryView'
 import { gameToInput } from './library/game-input'
 import ProfileView from './profile/ProfileView'
+import SettingsView from './settings/SettingsView'
 
-type Tab = 'perfil' | 'biblioteca'
+type Tab = 'perfil' | 'biblioteca' | 'ajustes'
 
 async function fetchAll(): Promise<[Game[], Profile, LibraryStats]> {
   return Promise.all([window.api.listGames(), window.api.getProfile(), window.api.getStats()])
@@ -34,6 +37,7 @@ function App(): React.JSX.Element {
   const [tab, setTab] = useState<Tab>('perfil')
   const [games, setGames] = useState<Game[]>([])
   const [profile, setProfile] = useState<Profile>(emptyProfile)
+  const [profileLoaded, setProfileLoaded] = useState(false)
   const [stats, setStats] = useState<LibraryStats>({
     totalGames: 0,
     completed: 0,
@@ -51,22 +55,96 @@ function App(): React.JSX.Element {
   const [addOpen, setAddOpen] = useState(false)
   const [editGame, setEditGame] = useState<Game | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+  const [steamMetadataResult, setSteamMetadataResult] = useState<SteamMetadataRefresh | null>(null)
   const contentRef = useRef<HTMLElement>(null)
   const returnFocusRef = useRef<HTMLElement | null>(null)
   const returnGameIdRef = useRef<number | null>(null)
   const focusTargetRef = useRef<'heading' | 'return' | null>(null)
+  const metadataTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const metadataRefreshRef = useRef<Promise<CatalogResult<SteamMetadataRefresh>> | null>(null)
+  const metadataCooldownResultRef = useRef<CatalogResult<SteamMetadataRefresh> | null>(null)
+  const metadataRunnerRef = useRef<(() => Promise<CatalogResult<SteamMetadataRefresh>>) | null>(
+    null
+  )
+  const metadataRefreshQueuedRef = useRef(false)
+  const metadataGenerationRef = useRef(0)
 
   const refresh = useCallback(async (): Promise<void> => {
     try {
       const [nextGames, nextProfile, nextStats] = await fetchAll()
       setGames(nextGames)
       setProfile(nextProfile)
+      setProfileLoaded(true)
       setStats(nextStats)
       setError(null)
     } catch (reason) {
       setError(formatError(reason))
     }
   }, [])
+
+  const refreshSteamMetadata = useCallback((): Promise<CatalogResult<SteamMetadataRefresh>> => {
+    if (metadataTimerRef.current && metadataCooldownResultRef.current) {
+      return Promise.resolve(metadataCooldownResultRef.current)
+    }
+    if (metadataRefreshRef.current) {
+      metadataRefreshQueuedRef.current = true
+      return metadataRefreshRef.current
+    }
+    const generation = metadataGenerationRef.current
+    const request = window.api.refreshSteamMetadata().then((result) => {
+      if (generation !== metadataGenerationRef.current) return result
+      if (!result.ok) return result
+      setGames(result.value.games)
+      setEditGame((current) =>
+        current ? (result.value.games.find((game) => game.id === current.id) ?? current) : null
+      )
+      setSteamMetadataResult(result.value)
+      const rateLimit = result.value.failures.find(
+        ({ error: failure }) => failure.kind === 'rate-limit'
+      )?.error
+      if (metadataTimerRef.current) clearTimeout(metadataTimerRef.current)
+      metadataTimerRef.current = null
+      metadataCooldownResultRef.current = null
+      if (rateLimit) {
+        metadataCooldownResultRef.current = result
+        const delay = Math.max(1, rateLimit.retryAfterSeconds ?? 30) * 1_000
+        metadataTimerRef.current = setTimeout(() => {
+          metadataTimerRef.current = null
+          metadataCooldownResultRef.current = null
+          metadataRefreshQueuedRef.current = false
+          void metadataRunnerRef.current?.()
+        }, delay)
+      }
+      return result
+    })
+    metadataRefreshRef.current = request
+    const clearRequest = (): void => {
+      if (metadataRefreshRef.current === request) metadataRefreshRef.current = null
+      if (metadataRefreshQueuedRef.current && !metadataTimerRef.current) {
+        metadataRefreshQueuedRef.current = false
+        void metadataRunnerRef.current?.()
+      }
+    }
+    void request.then(clearRequest, clearRequest)
+    return request
+  }, [])
+
+  const resetSteamMetadata = useCallback((): void => {
+    metadataGenerationRef.current += 1
+    metadataRefreshQueuedRef.current = false
+    metadataCooldownResultRef.current = null
+    if (metadataTimerRef.current) clearTimeout(metadataTimerRef.current)
+    metadataTimerRef.current = null
+    setSteamMetadataResult(null)
+  }, [])
+
+  useEffect(() => {
+    metadataRunnerRef.current = refreshSteamMetadata
+    return () => {
+      metadataRunnerRef.current = null
+    }
+  }, [refreshSteamMetadata])
 
   useEffect(() => {
     let active = true
@@ -75,6 +153,7 @@ function App(): React.JSX.Element {
         if (!active) return
         setGames(nextGames)
         setProfile(nextProfile)
+        setProfileLoaded(true)
         setStats(nextStats)
         document.title = 'GameVault'
       })
@@ -85,6 +164,22 @@ function App(): React.JSX.Element {
       active = false
     }
   }, [])
+
+  useEffect(() => {
+    let active = true
+    window.api
+      .getSteamConnection()
+      .then((connection) => {
+        if (active && connection.account?.lastRefreshedAt) void refreshSteamMetadata()
+      })
+      .catch((reason: unknown) => {
+        if (active) setError(formatError(reason))
+      })
+    return () => {
+      active = false
+      if (metadataTimerRef.current) clearTimeout(metadataTimerRef.current)
+    }
+  }, [refreshSteamMetadata])
 
   useEffect(() => {
     let active = true
@@ -115,8 +210,8 @@ function App(): React.JSX.Element {
   useEffect(() => {
     const focusTarget = focusTargetRef.current
     if (!focusTarget) return
-    focusTargetRef.current = null
     if (focusTarget === 'return' && returnFocusRef.current?.isConnected) {
+      focusTargetRef.current = null
       returnFocusRef.current.focus()
       return
     }
@@ -125,12 +220,17 @@ function App(): React.JSX.Element {
         `[data-game-id="${returnGameIdRef.current}"]`
       )
       if (card) {
+        focusTargetRef.current = null
         card.focus()
         return
       }
     }
-    contentRef.current?.querySelector<HTMLElement>('[data-view-heading]')?.focus()
-  }, [selectedGame?.id, tab])
+    const heading = contentRef.current?.querySelector<HTMLElement>('[data-view-heading]')
+    if (heading) {
+      focusTargetRef.current = null
+      heading.focus()
+    }
+  }, [profileLoaded, selectedGame?.id, tab])
 
   function clearGameSelection(): void {
     achievementRevisionRef.current += 1
@@ -177,8 +277,14 @@ function App(): React.JSX.Element {
   }
 
   async function createGame(input: GameInput): Promise<Game> {
-    const created = await window.api.createGame(input)
+    const result = await window.api.createGame(input)
+    const created = result.game
     storeGame(created)
+    setNotice(
+      result.created
+        ? null
+        : `“${created.title}” ya estaba en tu biblioteca. Se completaron los metadatos disponibles.`
+    )
     setAddOpen(false)
     focusTargetRef.current = 'heading'
     returnFocusRef.current = null
@@ -191,6 +297,15 @@ function App(): React.JSX.Element {
     setSelectedGameId(created.id)
     await refresh()
     return created
+  }
+
+  async function refreshGameMetadata(game: Game): Promise<CatalogResult<Game>> {
+    const result = await window.api.refreshGameMetadata(game.id)
+    if (result.ok) {
+      storeGame(result.value)
+      setEditGame(result.value)
+    }
+    return result
   }
 
   async function updateGame(game: Game, input: GameInput): Promise<void> {
@@ -212,6 +327,15 @@ function App(): React.JSX.Element {
   }
 
   async function refreshAchievementStats(): Promise<void> {
+    try {
+      setStats(await window.api.getStats())
+    } catch (reason) {
+      setError(formatError(reason))
+    }
+  }
+
+  async function acceptSteamLibrary(nextGames: Game[]): Promise<void> {
+    setGames(nextGames)
     try {
       setStats(await window.api.getStats())
     } catch (reason) {
@@ -241,6 +365,17 @@ function App(): React.JSX.Element {
         current
           .map((entry) => (entry.id === updated.id ? updated : entry))
           .sort((first, second) => first.name.localeCompare(second.name, 'es'))
+      )
+    }
+    await refreshAchievementStats()
+  }
+
+  async function clearAchievementOverride(achievement: Achievement): Promise<void> {
+    const updated = await window.api.clearAchievementOverride(achievement.id)
+    if (selectedGameIdRef.current === achievement.gameId) {
+      achievementRevisionRef.current += 1
+      setAchievements((current) =>
+        current.map((entry) => (entry.id === updated.id ? updated : entry))
       )
     }
     await refreshAchievementStats()
@@ -279,22 +414,21 @@ function App(): React.JSX.Element {
       <nav className="topbar" aria-label="Navegación principal">
         <button
           type="button"
-          className="brand"
+          className="profile-nav"
           onClick={() => showTab('perfil')}
           aria-label="Ir al perfil"
+          aria-current={tab === 'perfil' && !selectedGame ? 'page' : undefined}
         >
-          <span className="brand-mark">G</span>
-          <span>GAMEVAULT</span>
+          {profile.avatarUrl ? (
+            <img src={profile.avatarUrl} alt="" />
+          ) : (
+            <span className="profile-nav-fallback" aria-hidden="true">
+              {profile.displayName.trim().charAt(0).toUpperCase() || 'G'}
+            </span>
+          )}
+          <span>{profile.displayName}</span>
         </button>
         <div className="tabs">
-          <button
-            type="button"
-            className={`tab ${tab === 'perfil' && !selectedGame ? 'active' : ''}`}
-            onClick={() => showTab('perfil')}
-            aria-current={tab === 'perfil' && !selectedGame ? 'page' : undefined}
-          >
-            PERFIL
-          </button>
           <button
             type="button"
             className={`tab ${tab === 'biblioteca' ? 'active' : ''}`}
@@ -304,16 +438,31 @@ function App(): React.JSX.Element {
             BIBLIOTECA
           </button>
         </div>
-        <div className="topbar-user">
-          <span>{profile.displayName}</span>
-          <small>Biblioteca local</small>
-        </div>
+        <button
+          type="button"
+          className={`settings-nav ${tab === 'ajustes' ? 'active' : ''}`}
+          onClick={() => showTab('ajustes')}
+          aria-label="Abrir configuración"
+          aria-current={tab === 'ajustes' ? 'page' : undefined}
+        >
+          <svg aria-hidden="true" viewBox="0 0 24 24">
+            <path d="M12 8.25A3.75 3.75 0 1 0 12 15.75 3.75 3.75 0 0 0 12 8.25ZM20.25 13.35V10.65L17.9 10A6.5 6.5 0 0 0 17.2 8.3L18.4 6.2 16.5 4.3 14.4 5.5A6.5 6.5 0 0 0 12.7 4.8L12.05 2.5H9.35L8.7 4.8A6.5 6.5 0 0 0 7 5.5L4.9 4.3 3 6.2 4.2 8.3A6.5 6.5 0 0 0 3.5 10L1.15 10.65V13.35L3.5 14A6.5 6.5 0 0 0 4.2 15.7L3 17.8 4.9 19.7 7 18.5A6.5 6.5 0 0 0 8.7 19.2L9.35 21.5H12.05L12.7 19.2A6.5 6.5 0 0 0 14.4 18.5L16.5 19.7 18.4 17.8 17.2 15.7A6.5 6.5 0 0 0 17.9 14Z" />
+          </svg>
+        </button>
       </nav>
 
       {error && (
         <div className="error-banner" role="alert">
           <span>{error}</span>
           <button type="button" onClick={() => setError(null)} aria-label="Cerrar">
+            ×
+          </button>
+        </div>
+      )}
+      {notice && (
+        <div className="status-banner" role="status">
+          <span>{notice}</span>
+          <button type="button" onClick={() => setNotice(null)} aria-label="Cerrar aviso">
             ×
           </button>
         </div>
@@ -331,18 +480,25 @@ function App(): React.JSX.Element {
             onToggleShowcase={toggleShowcase}
             onCreateAchievement={createAchievement}
             onUpdateAchievement={updateAchievement}
+            onClearAchievementOverride={clearAchievementOverride}
             onDeleteAchievement={deleteAchievement}
           />
         ) : tab === 'perfil' ? (
-          <ProfileView
+          <ProfileView profile={profile} stats={stats} games={games} onOpenGame={openGame} />
+        ) : tab === 'biblioteca' ? (
+          <LibraryView games={games} onAdd={() => setAddOpen(true)} onOpen={openGame} />
+        ) : profileLoaded ? (
+          <SettingsView
             profile={profile}
-            stats={stats}
-            games={games}
-            onOpenGame={openGame}
             onUpdateProfile={updateProfile}
+            onLibraryUpdated={acceptSteamLibrary}
+            onRefreshSteamMetadata={refreshSteamMetadata}
+            onSteamConnectionChanged={resetSteamMetadata}
+            steamMetadataResult={steamMetadataResult}
+            onAchievementsUpdated={refreshAchievementStats}
           />
         ) : (
-          <LibraryView games={games} onAdd={() => setAddOpen(true)} onOpen={openGame} />
+          <p>Cargando configuración...</p>
         )}
       </main>
 
@@ -351,6 +507,7 @@ function App(): React.JSX.Element {
         <GameFormModal
           game={editGame}
           onSave={updateGame}
+          onRefreshMetadata={refreshGameMetadata}
           onDelete={deleteGame}
           onClose={() => setEditGame(null)}
         />

@@ -14,6 +14,8 @@
 - Contract tests for the preload and IPC boundaries plus renderer tests for adding, editing, and deleting games.
 - Manually managed game achievements with persisted unlock state, per-game progress, and aggregate profile totals.
 - Durable local PNG, JPEG, GIF, and WebP images for game covers, profile avatars, and profile backgrounds.
+- General settings and a Playnite-inspired Steam integration with isolated web login, advanced personal-key fallback, and explicit library preview and refresh.
+- Separate manual Steam achievement import with retained provider evidence and manual override precedence.
 
 ### Changed
 
@@ -37,3 +39,14 @@
 - Kept successful game changes visible when a secondary refresh fails and removed the hidden six-game showcase limit.
 - Added reproducible LF formatting checks and unpacked application verification across supported build platforms.
 - Kept local image paths behind a narrow native picker and served managed copies through an opaque application protocol.
+- Separated canonical games from Steam ownership and kept account refresh manual, transactional, and idempotent.
+- Simplified primary navigation around the local profile, library, and a compact Settings action.
+- Saved Steam ownership before a separately retryable game-by-game metadata pass, preserving personal edits and local artwork.
+- Preferred verified vertical Steam artwork with Store artwork as a fallback, and stopped metadata or achievement fan-out after rate-limit and authentication failures.
+- Added a return-to-Steam-state action for manually overridden achievements and refreshed profile totals after achievement imports.
+- Preserved Steam-reported unlock dates through the achievement-evidence schema upgrade.
+- Made Steam metadata enrichment resumable for active and retained AppIDs, skipping completed entries on later passes and automatically retrying pending entries after startup or a provider rate limit, including Store `429` responses without `Retry-After`.
+- Enriched imported Steam demos and mods, and retained verified CDN artwork for delisted applications whose Store detail envelope is unavailable.
+- Reconciled duplicate additions by catalog identity or normalized title, filling only missing metadata while preserving personal data and existing artwork.
+- Added an explicit per-game metadata refresh for catalog-backed library entries.
+- Requeued Steam metadata once after upgrade and preserved unique ownership titles when Store aliases or collapsed names would create false duplicates, repairing entries such as the F.E.A.R. expansions automatically.

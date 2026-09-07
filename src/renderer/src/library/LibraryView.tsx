@@ -32,7 +32,7 @@ export default function LibraryView({ games, onAdd, onOpen }: LibraryViewProps):
           <p>{games.length} títulos guardados en este equipo</p>
         </div>
         <button type="button" className="action-button" onClick={onAdd}>
-          <span>＋</span> Añadir juego
+          <span aria-hidden>＋</span> Añadir juego
         </button>
       </header>
 
@@ -71,13 +71,13 @@ export default function LibraryView({ games, onAdd, onOpen }: LibraryViewProps):
             <GameCard key={game.id} game={game} onOpen={onOpen} />
           ))}
           <button type="button" className="add-cover" onClick={onAdd}>
-            <span>＋</span>
+            <span aria-hidden>＋</span>
             Añadir título
           </button>
         </div>
       ) : (
         <div className="library-empty">
-          <span>＋</span>
+          <span aria-hidden>＋</span>
           <h2>{games.length ? 'No hay coincidencias' : 'Empieza tu colección'}</h2>
           <p>
             {games.length

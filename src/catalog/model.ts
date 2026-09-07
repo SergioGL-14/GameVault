@@ -1,11 +1,19 @@
 export type CatalogProvider = 'steam' | 'rawg'
 
 export type CatalogFailureKind =
-  'invalid-input' | 'offline' | 'timeout' | 'authentication' | 'rate-limit' | 'provider-response'
+  | 'invalid-input'
+  | 'offline'
+  | 'timeout'
+  | 'authentication'
+  | 'rate-limit'
+  | 'provider-response'
+  | 'stale-preview'
+  | 'secure-storage'
 
 export interface CatalogFailure {
   kind: CatalogFailureKind
   provider: CatalogProvider
+  retryAfterSeconds?: number
 }
 
 export type CatalogResult<T> = { ok: true; value: T } | { ok: false; error: CatalogFailure }

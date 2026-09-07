@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3'
 
-const SCHEMA_VERSION = 1
+const SCHEMA_VERSION = 7
 
 const GAME_TABLE = `CREATE TABLE IF NOT EXISTS games (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -51,10 +51,58 @@ CREATE TABLE IF NOT EXISTS achievements (
   icon_url TEXT,
   unlocked INTEGER NOT NULL DEFAULT 0 CHECK (unlocked IN (0, 1)),
   unlocked_at TEXT,
+  provider TEXT CHECK (provider IS NULL OR provider = 'steam'),
+  provider_achievement_id TEXT,
+  provider_unlocked INTEGER CHECK (provider_unlocked IS NULL OR provider_unlocked IN (0, 1)),
+  provider_unlocked_at TEXT,
+  manual_override INTEGER CHECK (manual_override IS NULL OR manual_override IN (0, 1)),
   CHECK (unlocked = 1 OR unlocked_at IS NULL)
 );
 CREATE INDEX IF NOT EXISTS achievements_game_id ON achievements(game_id);
 `
+
+const ACHIEVEMENT_COLUMNS: Record<string, string> = {
+  provider: "TEXT CHECK (provider IS NULL OR provider = 'steam')",
+  provider_achievement_id: 'TEXT',
+  provider_unlocked: 'INTEGER CHECK (provider_unlocked IS NULL OR provider_unlocked IN (0, 1))',
+  provider_unlocked_at: 'TEXT',
+  manual_override: 'INTEGER CHECK (manual_override IS NULL OR manual_override IN (0, 1))'
+}
+
+const OWNERSHIP_SCHEMA = `
+CREATE TABLE IF NOT EXISTS external_accounts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  provider TEXT NOT NULL,
+  external_user_id TEXT NOT NULL,
+  display_name TEXT NOT NULL,
+  avatar_url TEXT,
+  connected INTEGER NOT NULL DEFAULT 1 CHECK (connected IN (0, 1)),
+  last_refreshed_at TEXT,
+  UNIQUE (provider, external_user_id)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS external_accounts_one_connected_provider
+  ON external_accounts(provider) WHERE connected = 1;
+
+CREATE TABLE IF NOT EXISTS provider_ownerships (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  external_account_id INTEGER NOT NULL REFERENCES external_accounts(id) ON DELETE RESTRICT,
+  game_id INTEGER NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+  provider_game_id TEXT NOT NULL,
+  provider_title TEXT NOT NULL,
+  active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+  first_seen_at TEXT NOT NULL,
+  last_seen_at TEXT NOT NULL,
+  metadata_refreshed_at TEXT,
+  UNIQUE (external_account_id, provider_game_id)
+);
+CREATE INDEX IF NOT EXISTS provider_ownerships_game_id ON provider_ownerships(game_id);
+CREATE INDEX IF NOT EXISTS provider_ownerships_account_active
+  ON provider_ownerships(external_account_id, active);
+`
+
+const OWNERSHIP_COLUMNS: Record<string, string> = {
+  metadata_refreshed_at: 'TEXT'
+}
 
 const GAME_COLUMNS: Record<string, string> = {
   source: "TEXT NOT NULL DEFAULT 'manual'",
@@ -151,10 +199,32 @@ export function openDatabase(file: string): Database.Database {
       addMissingColumns(db, 'profile', PROFILE_COLUMNS)
       if (rebuildGames) allowSteamSource(db)
       db.exec(ACHIEVEMENT_SCHEMA)
+      addMissingColumns(db, 'achievements', ACHIEVEMENT_COLUMNS)
+      if (version < 4) {
+        db.exec(`
+          UPDATE achievements SET provider_unlocked_at = unlocked_at
+          WHERE provider = 'steam' AND provider_unlocked = 1 AND manual_override IS NULL
+            AND provider_unlocked_at IS NULL;
+        `)
+      }
+      db.exec(OWNERSHIP_SCHEMA)
+      addMissingColumns(db, 'provider_ownerships', OWNERSHIP_COLUMNS)
+      if (version === 5 || version === 6) {
+        // Re-run Steam enrichment once so persisted alias metadata is repaired by the current mapper.
+        db.exec(`
+          UPDATE provider_ownerships SET metadata_refreshed_at = NULL
+          WHERE external_account_id IN (
+            SELECT id FROM external_accounts WHERE provider = 'steam'
+          );
+        `)
+      }
       db.exec(`
         UPDATE games SET cover_url = cover_path WHERE cover_url IS NULL AND cover_path IS NOT NULL;
         CREATE UNIQUE INDEX IF NOT EXISTS games_catalog_source_id
           ON games(source, catalog_id) WHERE catalog_id IS NOT NULL;
+        CREATE UNIQUE INDEX IF NOT EXISTS achievements_provider_id
+          ON achievements(game_id, provider, provider_achievement_id)
+          WHERE provider IS NOT NULL AND provider_achievement_id IS NOT NULL;
       `)
 
       const foreignKeyViolations = db.pragma('foreign_key_check') as unknown[]

@@ -34,6 +34,7 @@ describe('preload desktop API', () => {
     ['listAchievements', IPC.listAchievements, [7]],
     ['createAchievement', IPC.createAchievement, [7, { name: 'Primer paso', unlocked: false }]],
     ['updateAchievement', IPC.updateAchievement, [9, { name: 'Primer paso', unlocked: true }]],
+    ['clearAchievementOverride', IPC.clearAchievementOverride, [9]],
     ['deleteAchievement', IPC.deleteAchievement, [9]],
     ['getProfile', IPC.getProfile, []],
     [
@@ -54,7 +55,16 @@ describe('preload desktop API', () => {
     ['saveCatalogKey', IPC.saveCatalogKey, ['key']],
     ['clearCatalogKey', IPC.clearCatalogKey, []],
     ['searchCatalog', IPC.searchCatalog, ['steam', 'Celeste']],
-    ['getCatalogGame', IPC.getCatalogGame, ['rawg', 7]]
+    ['getCatalogGame', IPC.getCatalogGame, ['rawg', 7]],
+    ['refreshGameMetadata', IPC.refreshGameMetadata, [7]],
+    ['getSteamConnection', IPC.steamConnection, []],
+    ['connectSteamWeb', IPC.connectSteamWeb, []],
+    ['connectSteamApiKey', IPC.connectSteamApiKey, ['profile', 'key']],
+    ['disconnectSteam', IPC.disconnectSteam, []],
+    ['previewSteamRefresh', IPC.previewSteamRefresh, []],
+    ['applySteamRefresh', IPC.applySteamRefresh, [{ previewId: 'id', resolutions: [] }]],
+    ['refreshSteamMetadata', IPC.refreshSteamMetadata, []],
+    ['refreshSteamAchievements', IPC.refreshSteamAchievements, []]
   ] as const)('%s invokes %s with the supplied arguments', async (method, channel, args) => {
     const result = await (api[method] as (...values: unknown[]) => Promise<unknown>)(...args)
 

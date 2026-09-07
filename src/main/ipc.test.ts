@@ -3,6 +3,7 @@ import { CatalogError, type AuthenticatedGameCatalog, type GameCatalog } from '.
 import { IPC } from '../desktop-api'
 import type { LibraryRepository } from './library/sqlite-library'
 import type { CatalogKeyStore } from './catalog/rawg-key-store'
+import type { SteamLibraryRefresh } from './steam/library-refresh'
 
 type Handler = (event: unknown, ...args: unknown[]) => unknown
 
@@ -17,22 +18,60 @@ vi.mock('electron', () => ({ ipcMain: { handle: electron.handle } }))
 
 import { registerIpc } from './ipc'
 
+const game = {
+  id: 7,
+  source: 'steam' as const,
+  catalogId: 400,
+  title: 'Portal',
+  description: '',
+  status: 'pendiente' as const,
+  playtimeMinutes: 0,
+  rating: null,
+  notes: '',
+  coverUrl: null,
+  backgroundUrl: null,
+  screenshots: [],
+  releasedAt: null,
+  developers: [],
+  publishers: [],
+  genres: [],
+  platforms: [],
+  website: null,
+  metacritic: null,
+  showcased: false,
+  completedAt: null,
+  addedAt: '2026-09-07',
+  ownedOn: []
+}
+
 function method<T extends (...args: never[]) => unknown>(): ReturnType<typeof vi.fn<T>> {
   return vi.fn<T>()
 }
 
 const repo: LibraryRepository = {
   listGames: method<LibraryRepository['listGames']>(),
+  addGame: method<LibraryRepository['addGame']>(),
+  getGame: method<LibraryRepository['getGame']>(),
   createGame: method<LibraryRepository['createGame']>(),
   updateGame: method<LibraryRepository['updateGame']>(),
   deleteGame: method<LibraryRepository['deleteGame']>(),
   listAchievements: method<LibraryRepository['listAchievements']>(),
   createAchievement: method<LibraryRepository['createAchievement']>(),
   updateAchievement: method<LibraryRepository['updateAchievement']>(),
+  clearAchievementOverride: method<LibraryRepository['clearAchievementOverride']>(),
   deleteAchievement: method<LibraryRepository['deleteAchievement']>(),
   getProfile: method<LibraryRepository['getProfile']>(),
   updateProfile: method<LibraryRepository['updateProfile']>(),
-  getStats: method<LibraryRepository['getStats']>()
+  getStats: method<LibraryRepository['getStats']>(),
+  getSteamAccount: method<LibraryRepository['getSteamAccount']>(),
+  connectSteamAccount: method<LibraryRepository['connectSteamAccount']>(),
+  disconnectSteamAccount: method<LibraryRepository['disconnectSteamAccount']>(),
+  applySteamOwnershipSnapshot: method<LibraryRepository['applySteamOwnershipSnapshot']>(),
+  listSteamOwnerships: method<LibraryRepository['listSteamOwnerships']>(),
+  listPendingSteamMetadata: method<LibraryRepository['listPendingSteamMetadata']>(),
+  applyCatalogMetadata: method<LibraryRepository['applyCatalogMetadata']>(),
+  applySteamMetadata: method<LibraryRepository['applySteamMetadata']>(),
+  applySteamAchievementSnapshot: method<LibraryRepository['applySteamAchievementSnapshot']>()
 }
 
 const steamCatalog: GameCatalog = {
@@ -54,6 +93,16 @@ const catalogKey: CatalogKeyStore = {
 }
 
 const selectLocalImage = vi.fn<() => Promise<string | null>>()
+const steamLibrary: SteamLibraryRefresh = {
+  status: method<SteamLibraryRefresh['status']>(),
+  connectWeb: method<SteamLibraryRefresh['connectWeb']>(),
+  connectWithApiKey: method<SteamLibraryRefresh['connectWithApiKey']>(),
+  disconnect: method<SteamLibraryRefresh['disconnect']>(),
+  preview: method<SteamLibraryRefresh['preview']>(),
+  apply: method<SteamLibraryRefresh['apply']>(),
+  refreshMetadata: method<SteamLibraryRefresh['refreshMetadata']>(),
+  refreshAchievements: method<SteamLibraryRefresh['refreshAchievements']>()
+}
 
 function invoke(channel: string, ...args: unknown[]): unknown {
   const handler = electron.handlers.get(channel)
@@ -64,7 +113,7 @@ function invoke(channel: string, ...args: unknown[]): unknown {
 beforeEach(() => {
   vi.clearAllMocks()
   electron.handlers.clear()
-  registerIpc(repo, steamCatalog, rawgCatalog, catalogKey, selectLocalImage)
+  registerIpc(repo, steamCatalog, rawgCatalog, catalogKey, selectLocalImage, steamLibrary)
 })
 
 describe('IPC registration', () => {
@@ -79,7 +128,7 @@ describe('IPC registration', () => {
     invoke(IPC.updateGame, 7, input)
     invoke(IPC.deleteGame, 7)
 
-    expect(repo.createGame).toHaveBeenCalledWith(input)
+    expect(repo.addGame).toHaveBeenCalledWith(input)
     expect(repo.updateGame).toHaveBeenCalledWith(7, input)
     expect(repo.deleteGame).toHaveBeenCalledWith(7)
   })
@@ -90,11 +139,13 @@ describe('IPC registration', () => {
     invoke(IPC.listAchievements, 7)
     invoke(IPC.createAchievement, 7, input)
     invoke(IPC.updateAchievement, 9, input)
+    invoke(IPC.clearAchievementOverride, 9)
     invoke(IPC.deleteAchievement, 9)
 
     expect(repo.listAchievements).toHaveBeenCalledWith(7)
     expect(repo.createAchievement).toHaveBeenCalledWith(7, input)
     expect(repo.updateAchievement).toHaveBeenCalledWith(9, input)
+    expect(repo.clearAchievementOverride).toHaveBeenCalledWith(9)
     expect(repo.deleteAchievement).toHaveBeenCalledWith(9)
   })
 
@@ -119,6 +170,62 @@ describe('IPC registration', () => {
     expect(catalogKey.save).toHaveBeenCalledWith('key')
   })
 
+  it('refreshes one game through its persisted catalog identity', async () => {
+    vi.mocked(repo.getGame).mockReturnValue(game)
+    vi.mocked(steamCatalog.getGame).mockResolvedValue({
+      source: 'steam',
+      catalogId: 400,
+      title: 'Portal',
+      description: 'Descripción',
+      coverUrl: null,
+      backgroundUrl: null,
+      screenshots: [],
+      releasedAt: null,
+      developers: [],
+      publishers: [],
+      genres: [],
+      platforms: [],
+      website: null,
+      metacritic: null
+    })
+    vi.mocked(repo.applyCatalogMetadata).mockReturnValue({ ...game, description: 'Descripción' })
+
+    await expect(invoke(IPC.refreshGameMetadata, game.id)).resolves.toMatchObject({
+      ok: true,
+      value: { id: game.id, description: 'Descripción' }
+    })
+    expect(steamCatalog.getGame).toHaveBeenCalledWith(400)
+    expect(repo.applyCatalogMetadata).toHaveBeenCalledWith(
+      game.id,
+      expect.objectContaining({ source: 'steam', catalogId: 400 })
+    )
+  })
+
+  it('does not disguise metadata persistence failures as catalog failures', async () => {
+    vi.mocked(repo.getGame).mockReturnValue(game)
+    vi.mocked(steamCatalog.getGame).mockResolvedValue({
+      source: 'steam',
+      catalogId: 400,
+      title: 'Portal',
+      description: '',
+      coverUrl: null,
+      backgroundUrl: null,
+      screenshots: [],
+      releasedAt: null,
+      developers: [],
+      publishers: [],
+      genres: [],
+      platforms: [],
+      website: null,
+      metacritic: null
+    })
+    vi.mocked(repo.applyCatalogMetadata).mockImplementation(() => {
+      throw new Error('SQLite write failed')
+    })
+
+    await expect(invoke(IPC.refreshGameMetadata, game.id)).rejects.toThrow('SQLite write failed')
+  })
+
   it('forwards local image selection without renderer-supplied paths', async () => {
     selectLocalImage.mockResolvedValueOnce('gamevault-image://local/image.png')
 
@@ -126,9 +233,44 @@ describe('IPC registration', () => {
 
     expect(selectLocalImage).toHaveBeenCalledWith()
   })
+
+  it('forwards narrow Steam connection and refresh operations', async () => {
+    invoke(IPC.steamConnection)
+    await invoke(IPC.connectSteamWeb)
+    await invoke(IPC.connectSteamApiKey, 'profile', 'key')
+    await invoke(IPC.previewSteamRefresh)
+    await invoke(IPC.refreshSteamMetadata)
+    await invoke(IPC.refreshSteamAchievements)
+    invoke(IPC.applySteamRefresh, { previewId: 'preview', resolutions: [] })
+    invoke(IPC.disconnectSteam)
+
+    expect(steamLibrary.status).toHaveBeenCalledWith()
+    expect(steamLibrary.connectWeb).toHaveBeenCalledWith()
+    expect(steamLibrary.connectWithApiKey).toHaveBeenCalledWith('profile', 'key')
+    expect(steamLibrary.preview).toHaveBeenCalledWith()
+    expect(steamLibrary.refreshMetadata).toHaveBeenCalledWith()
+    expect(steamLibrary.refreshAchievements).toHaveBeenCalledWith()
+    expect(steamLibrary.apply).toHaveBeenCalledWith({ previewId: 'preview', resolutions: [] })
+    expect(steamLibrary.disconnect).toHaveBeenCalledWith()
+  })
 })
 
 describe('IPC validation', () => {
+  it('rejects malformed Steam connection and duplicate resolutions', () => {
+    expect(() => invoke(IPC.connectSteamApiKey, '', 'key')).toThrow('conexión de Steam')
+    expect(() =>
+      invoke(IPC.applySteamRefresh, {
+        previewId: 'preview',
+        resolutions: [
+          { appId: 400, gameId: null },
+          { appId: 400, gameId: 2 }
+        ]
+      })
+    ).toThrow('duplicada')
+    expect(steamLibrary.connectWithApiKey).not.toHaveBeenCalled()
+    expect(steamLibrary.apply).not.toHaveBeenCalled()
+  })
+
   it.each([0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, '7', null])(
     'rejects malformed library ID %j',
     (id) => {

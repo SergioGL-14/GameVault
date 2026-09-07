@@ -1,7 +1,5 @@
-import { useState, type FormEvent } from 'react'
 import type { Game, LibraryStats, Profile } from '../../../library/model'
-import Modal from '../dialog/Modal'
-import { formatDuration, formatError } from '../format'
+import { formatDuration } from '../format'
 import ImageWithFallback from '../image/ImageWithFallback'
 import { STATUS_LABELS } from '../library/status-labels'
 
@@ -10,7 +8,6 @@ interface ProfileViewProps {
   stats: LibraryStats
   games: Game[]
   onOpenGame: (game: Game) => void
-  onUpdateProfile: (input: Profile) => Promise<void>
 }
 
 function levelFromCompleted(completed: number): { level: number; progress: number } {
@@ -21,18 +18,8 @@ export default function ProfileView({
   profile,
   stats,
   games,
-  onOpenGame,
-  onUpdateProfile
+  onOpenGame
 }: ProfileViewProps): React.JSX.Element {
-  const [editing, setEditing] = useState(false)
-  const [displayName, setDisplayName] = useState('')
-  const [about, setAbout] = useState('')
-  const [location, setLocation] = useState('')
-  const [avatarUrl, setAvatarUrl] = useState('')
-  const [backgroundUrl, setBackgroundUrl] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [selectingImage, setSelectingImage] = useState<'avatar' | 'background' | null>(null)
-  const [profileError, setProfileError] = useState<string | null>(null)
   const showcased = games.filter((game) => game.showcased)
   const completed = games
     .filter((game) => game.status === 'completado')
@@ -52,53 +39,6 @@ export default function ProfileView({
     ? Math.round((stats.completed / stats.totalGames) * 100)
     : 0
   const backdrop = profile.backgroundUrl ?? showcased[0]?.backgroundUrl ?? games[0]?.backgroundUrl
-
-  function startEditing(): void {
-    setDisplayName(profile.displayName)
-    setAbout(profile.about)
-    setLocation(profile.location)
-    setAvatarUrl(profile.avatarUrl ?? '')
-    setBackgroundUrl(profile.backgroundUrl ?? '')
-    setEditing(true)
-  }
-
-  async function saveProfile(event: FormEvent): Promise<void> {
-    event.preventDefault()
-    setSaving(true)
-    setProfileError(null)
-    try {
-      await onUpdateProfile({
-        displayName,
-        about,
-        location,
-        avatarUrl: avatarUrl || null,
-        backgroundUrl: backgroundUrl || null
-      })
-      setEditing(false)
-    } catch (reason) {
-      setProfileError(formatError(reason))
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function selectImage(
-    kind: 'avatar' | 'background',
-    setImage: (url: string) => void
-  ): Promise<void> {
-    setSaving(true)
-    setSelectingImage(kind)
-    setProfileError(null)
-    try {
-      const selected = await window.api.selectLocalImage()
-      if (selected !== null) setImage(selected)
-    } catch (reason) {
-      setProfileError(formatError(reason))
-    } finally {
-      setSelectingImage(null)
-      setSaving(false)
-    }
-  }
 
   return (
     <section
@@ -152,9 +92,6 @@ export default function ProfileView({
               </div>
             </div>
           </div>
-          <button type="button" className="profile-edit" onClick={startEditing}>
-            Modificar perfil
-          </button>
         </header>
 
         <div className="profile-columns">
@@ -349,145 +286,6 @@ export default function ProfileView({
           )}
         </div>
       </div>
-
-      {editing && (
-        <Modal
-          className="edit-modal profile-editor"
-          labelledBy="profile-modal-title"
-          onClose={() => setEditing(false)}
-          busy={saving}
-        >
-          <form onSubmit={saveProfile} aria-busy={saving}>
-            <header className="modal-header">
-              <div>
-                <p className="eyebrow">Personalización</p>
-                <h2 id="profile-modal-title">Modificar perfil</h2>
-              </div>
-              <button
-                type="button"
-                className="icon-btn"
-                onClick={() => setEditing(false)}
-                aria-label="Cerrar"
-                disabled={saving}
-              >
-                ×
-              </button>
-            </header>
-            <label className="field">
-              <span>Nombre</span>
-              <input
-                value={displayName}
-                autoFocus
-                onChange={(event) => setDisplayName(event.target.value)}
-                required
-              />
-            </label>
-            <label className="field">
-              <span>Ubicación</span>
-              <input
-                value={location}
-                onChange={(event) => setLocation(event.target.value)}
-                placeholder="Galicia, España"
-              />
-            </label>
-            <label className="field">
-              <span>Sobre mí</span>
-              <textarea rows={4} value={about} onChange={(event) => setAbout(event.target.value)} />
-            </label>
-            <div className="image-field">
-              <label className="field">
-                <span>URL del avatar</span>
-                <input
-                  type="url"
-                  value={avatarUrl}
-                  onChange={(event) => setAvatarUrl(event.target.value)}
-                  placeholder="https://…"
-                  disabled={saving}
-                />
-              </label>
-              <div className="image-actions">
-                <button
-                  type="button"
-                  className="quiet-button"
-                  aria-label={
-                    selectingImage === 'avatar'
-                      ? 'Eligiendo archivo para el avatar'
-                      : 'Elegir archivo para el avatar'
-                  }
-                  onClick={() => void selectImage('avatar', setAvatarUrl)}
-                  disabled={saving}
-                >
-                  {selectingImage === 'avatar' ? 'Eligiendo…' : 'Elegir archivo'}
-                </button>
-                <button
-                  type="button"
-                  className="text-button"
-                  aria-label="Quitar avatar"
-                  onClick={() => setAvatarUrl('')}
-                  disabled={saving || !avatarUrl}
-                >
-                  Quitar imagen
-                </button>
-              </div>
-            </div>
-            <div className="image-field">
-              <label className="field">
-                <span>URL del fondo</span>
-                <input
-                  type="url"
-                  value={backgroundUrl}
-                  onChange={(event) => setBackgroundUrl(event.target.value)}
-                  placeholder="https://…"
-                  disabled={saving}
-                />
-              </label>
-              <div className="image-actions">
-                <button
-                  type="button"
-                  className="quiet-button"
-                  aria-label={
-                    selectingImage === 'background'
-                      ? 'Eligiendo archivo para el fondo'
-                      : 'Elegir archivo para el fondo'
-                  }
-                  onClick={() => void selectImage('background', setBackgroundUrl)}
-                  disabled={saving}
-                >
-                  {selectingImage === 'background' ? 'Eligiendo…' : 'Elegir archivo'}
-                </button>
-                <button
-                  type="button"
-                  className="text-button"
-                  aria-label="Quitar fondo"
-                  onClick={() => setBackgroundUrl('')}
-                  disabled={saving || !backgroundUrl}
-                >
-                  Quitar imagen
-                </button>
-              </div>
-            </div>
-            {profileError && (
-              <p className="modal-error" role="alert">
-                {profileError}
-              </p>
-            )}
-            <footer className="modal-footer">
-              <span className="spacer" />
-              <button
-                type="button"
-                className="quiet-button"
-                onClick={() => setEditing(false)}
-                disabled={saving}
-              >
-                Cancelar
-              </button>
-              <button type="submit" className="action-button" disabled={saving}>
-                Guardar perfil
-              </button>
-            </footer>
-          </form>
-        </Modal>
-      )}
     </section>
   )
 }

@@ -1,5 +1,7 @@
 import { useState, type FormEvent } from 'react'
+import type { CatalogResult } from '../../../catalog/model'
 import { GAME_STATUSES, type Game, type GameStatus } from '../../../library/model'
+import { catalogFailureMessage } from '../catalog/catalog-failure'
 import Modal from '../dialog/Modal'
 import { formatError } from '../format'
 import { gameToInput } from './game-input'
@@ -8,6 +10,7 @@ import { STATUS_LABELS } from './status-labels'
 interface GameFormModalProps {
   game: Game
   onSave: (game: Game, input: ReturnType<typeof gameToInput>) => Promise<void>
+  onRefreshMetadata: (game: Game) => Promise<CatalogResult<Game>>
   onDelete: (game: Game) => Promise<void>
   onClose: () => void
 }
@@ -15,6 +18,7 @@ interface GameFormModalProps {
 export default function GameFormModal({
   game,
   onSave,
+  onRefreshMetadata,
   onDelete,
   onClose
 }: GameFormModalProps): React.JSX.Element {
@@ -28,6 +32,7 @@ export default function GameFormModal({
   const [busy, setBusy] = useState(false)
   const [selectingImage, setSelectingImage] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [message, setMessage] = useState<string | null>(null)
 
   async function submit(event: FormEvent): Promise<void> {
     event.preventDefault()
@@ -73,6 +78,32 @@ export default function GameFormModal({
       setError(formatError(reason))
     } finally {
       setSelectingImage(false)
+      setBusy(false)
+    }
+  }
+
+  async function refreshMetadata(): Promise<void> {
+    setBusy(true)
+    setError(null)
+    setMessage('Actualizando metadatos…')
+    const previousTitle = game.title
+    const previousCover = game.coverUrl ?? ''
+    try {
+      const result = await onRefreshMetadata(game)
+      if (!result.ok) {
+        setError(catalogFailureMessage(result.error))
+        setMessage(null)
+        return
+      }
+      setTitle((current) => (current === previousTitle ? result.value.title : current))
+      setCoverUrl((current) =>
+        current === previousCover ? (result.value.coverUrl ?? '') : current
+      )
+      setMessage('Metadatos actualizados.')
+    } catch (reason) {
+      setError(formatError(reason))
+      setMessage(null)
+    } finally {
       setBusy(false)
     }
   }
@@ -188,7 +219,22 @@ export default function GameFormModal({
             {error}
           </p>
         )}
+        {message && (
+          <p className="modal-status" role="status" aria-live="polite">
+            {message}
+          </p>
+        )}
         <footer className="modal-footer">
+          {game.source !== 'manual' && game.catalogId !== null && (
+            <button
+              type="button"
+              className="quiet-button"
+              onClick={() => void refreshMetadata()}
+              disabled={busy}
+            >
+              Actualizar metadatos
+            </button>
+          )}
           <button type="button" className="danger-button" onClick={remove} disabled={busy}>
             Eliminar de la biblioteca
           </button>

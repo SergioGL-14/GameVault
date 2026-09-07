@@ -8,6 +8,7 @@ export const GAME_STATUSES = [
 
 export type GameStatus = (typeof GAME_STATUSES)[number]
 export type GameSource = 'manual' | 'steam' | 'rawg'
+export type OwnershipProvider = 'steam'
 
 export interface Game {
   id: number
@@ -32,6 +33,7 @@ export interface Game {
   showcased: boolean
   completedAt: string | null
   addedAt: string
+  ownedOn: OwnershipProvider[]
 }
 
 export interface GameInput {
@@ -56,6 +58,11 @@ export interface GameInput {
   showcased?: boolean
 }
 
+export interface AddGameResult {
+  game: Game
+  created: boolean
+}
+
 export interface Achievement {
   id: number
   gameId: number
@@ -64,6 +71,9 @@ export interface Achievement {
   iconUrl: string | null
   unlocked: boolean
   unlockedAt: string | null
+  provider: 'steam' | null
+  providerUnlocked: boolean | null
+  manualOverride: boolean | null
 }
 
 export interface AchievementInput {

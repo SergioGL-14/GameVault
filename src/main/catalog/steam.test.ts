@@ -67,12 +67,132 @@ describe('catálogo de Steam', () => {
     expect(game.source).toBe('steam')
     expect(game.description).toBe('Puzles & portales.\nUna prueba.')
     expect(game.coverUrl).toContain('/400/library_600x900.jpg')
+    expect(game.backgroundUrl).toBe('https://images/background.jpg')
     expect(game.screenshots).toEqual(['https://images/shot.jpg'])
     expect(game.website).toBe('https://store.steampowered.com/app/400')
   })
 
+  it('uses the conventional vertical asset when Steam omits Store artwork', async () => {
+    const fetcher = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            '400': { success: true, data: { type: 'game', name: 'Portal' } }
+          })
+        )
+    )
+
+    const game = await createSteamCatalog(fetcher as typeof fetch).getGame(400)
+
+    expect(game.coverUrl).toContain('/400/library_600x900.jpg')
+  })
+
+  it('falls back to Store artwork when the vertical asset does not exist', async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            '400': {
+              success: true,
+              data: { type: 'game', name: 'Portal', header_image: 'https://images/header.jpg' }
+            }
+          })
+        )
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 404 }))
+
+    const game = await createSteamCatalog(fetcher as typeof fetch).getGame(400)
+
+    expect(game.coverUrl).toBe('https://images/header.jpg')
+  })
+
+  it('retries temporary Store rate limits before rejecting a game', async () => {
+    vi.useFakeTimers()
+    try {
+      const fetcher = vi
+        .fn()
+        .mockResolvedValueOnce(new Response(null, { status: 429 }))
+        .mockResolvedValueOnce(new Response(null, { status: 429 }))
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              '400': { success: true, data: { type: 'game', name: 'Portal' } }
+            })
+          )
+        )
+        .mockResolvedValueOnce(new Response(null, { status: 404 }))
+
+      const detail = createSteamCatalog(fetcher as typeof fetch).getGame(400)
+      await vi.advanceTimersByTimeAsync(5_000)
+
+      await expect(detail).resolves.toMatchObject({ catalogId: 400, title: 'Portal' })
+      expect(fetcher).toHaveBeenCalledTimes(4)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it.each(['demo', 'mod'])('enriches an imported Steam %s', async (type) => {
+    const fetcher = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            '400': { success: true, data: { type, name: 'Portal' } }
+          })
+        )
+    )
+
+    await expect(createSteamCatalog(fetcher as typeof fetch).getGame(400)).resolves.toMatchObject({
+      catalogId: 400,
+      title: 'Portal'
+    })
+  })
+
+  it('does not replace an alias title with metadata from another Steam AppID', async () => {
+    const fetcher = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            '21110': {
+              success: true,
+              data: {
+                type: 'game',
+                name: 'F.E.A.R.',
+                steam_appid: 21090,
+                short_description: 'Includes the base game and both expansions.',
+                header_image: 'https://shared.akamai.steamstatic.com/steam/apps/21090/header.jpg'
+              }
+            }
+          })
+        )
+    )
+
+    await expect(createSteamCatalog(fetcher as typeof fetch).getGame(21110)).resolves.toMatchObject(
+      {
+        catalogId: 21110,
+        title: 'Steam App 21110'
+      }
+    )
+  })
+
+  it('uses retained Steam artwork when a Store entry is unavailable', async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ '400': { success: false } })))
+      .mockResolvedValueOnce(new Response(null, { status: 404 }))
+      .mockResolvedValueOnce(new Response(null, { status: 200 }))
+
+    await expect(createSteamCatalog(fetcher as typeof fetch).getGame(400)).resolves.toMatchObject({
+      catalogId: 400,
+      title: 'Steam App 400',
+      coverUrl: 'https://cdn.akamai.steamstatic.com/steam/apps/400/header.jpg',
+      backgroundUrl: 'https://cdn.akamai.steamstatic.com/steam/apps/400/header.jpg'
+    })
+  })
+
   it('rechaza respuestas sin una ficha válida', async () => {
-    const fetcher = vi.fn(async () => new Response(JSON.stringify({ '400': { success: false } })))
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ '400': {} })))
     await expect(createSteamCatalog(fetcher as typeof fetch).getGame(400)).rejects.toMatchObject({
       failure: { provider: 'steam', kind: 'provider-response' }
     })
