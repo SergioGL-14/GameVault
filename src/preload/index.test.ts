@@ -3,12 +3,18 @@ import { IPC, type GameVaultApi } from '../desktop-api'
 
 const electron = vi.hoisted(() => ({
   exposeInMainWorld: vi.fn(),
-  invoke: vi.fn()
+  invoke: vi.fn(),
+  on: vi.fn(),
+  removeListener: vi.fn()
 }))
 
 vi.mock('electron', () => ({
   contextBridge: { exposeInMainWorld: electron.exposeInMainWorld },
-  ipcRenderer: { invoke: electron.invoke }
+  ipcRenderer: {
+    invoke: electron.invoke,
+    on: electron.on,
+    removeListener: electron.removeListener
+  }
 }))
 
 let api: GameVaultApi
@@ -64,11 +70,25 @@ describe('preload desktop API', () => {
     ['previewSteamRefresh', IPC.previewSteamRefresh, []],
     ['applySteamRefresh', IPC.applySteamRefresh, [{ previewId: 'id', resolutions: [] }]],
     ['refreshSteamMetadata', IPC.refreshSteamMetadata, []],
+    ['cancelSteamMetadata', IPC.cancelSteamMetadata, []],
     ['refreshSteamAchievements', IPC.refreshSteamAchievements, []]
   ] as const)('%s invokes %s with the supplied arguments', async (method, channel, args) => {
     const result = await (api[method] as (...values: unknown[]) => Promise<unknown>)(...args)
 
     expect(electron.invoke).toHaveBeenCalledWith(channel, ...args)
     expect(result).toBe('result')
+  })
+
+  it('subscribes to typed Steam metadata progress and removes the same listener', () => {
+    const listener = vi.fn()
+    const unsubscribe = api.onSteamMetadataProgress(listener)
+    const handler = electron.on.mock.calls[0][1]
+    const progress = { status: 'running', processed: 1, total: 2 }
+
+    handler({}, progress)
+    unsubscribe()
+
+    expect(listener).toHaveBeenCalledWith(progress)
+    expect(electron.removeListener).toHaveBeenCalledWith(IPC.steamMetadataProgress, handler)
   })
 })

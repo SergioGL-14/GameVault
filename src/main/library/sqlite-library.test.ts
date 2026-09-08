@@ -505,7 +505,7 @@ describe('propiedad externa', () => {
       catalogId: 400,
       title: 'Portal',
       description: 'Descripción',
-      coverUrl: null,
+      coverUrl: 'gamevault-image://local/123e4567-e89b-42d3-a456-426614174000.jpg',
       backgroundUrl: null,
       screenshots: [],
       releasedAt: null,
@@ -522,7 +522,76 @@ describe('propiedad externa', () => {
     ])
   })
 
-  it('keeps completed metadata complete when the same ownership snapshot is reapplied', () => {
+  it('refreshes provider metadata without replacing user-edited fields', () => {
+    const repo = makeRepo()
+    repo.connectSteamAccount(steamProfile)
+    repo.applySteamOwnershipSnapshot(
+      [{ appId: 400, title: 'Portal' }],
+      [{ appId: 400, gameId: null }]
+    )
+    const first = repo.applySteamMetadata(400, {
+      source: 'steam',
+      catalogId: 400,
+      title: 'Portal',
+      description: 'Descripción de Steam',
+      coverUrl: 'gamevault-image://local/123e4567-e89b-42d3-a456-426614174000.jpg',
+      backgroundUrl: null,
+      screenshots: [],
+      releasedAt: null,
+      developers: ['Valve'],
+      publishers: ['Valve'],
+      genres: ['Puzzle'],
+      platforms: ['Windows'],
+      website: null,
+      metacritic: null
+    })
+    repo.updateGame(first.id, {
+      source: first.source,
+      catalogId: first.catalogId,
+      title: first.title,
+      description: 'Mi descripción',
+      status: first.status,
+      playtimeMinutes: first.playtimeMinutes,
+      rating: first.rating,
+      notes: first.notes,
+      coverUrl: first.coverUrl,
+      backgroundUrl: first.backgroundUrl,
+      screenshots: first.screenshots,
+      releasedAt: first.releasedAt,
+      developers: first.developers,
+      publishers: first.publishers,
+      genres: first.genres,
+      platforms: first.platforms,
+      website: first.website,
+      metacritic: first.metacritic,
+      showcased: first.showcased
+    })
+
+    const refreshed = repo.applySteamMetadata(400, {
+      source: 'steam',
+      catalogId: 400,
+      title: 'Portal',
+      description: 'Descripción renovada',
+      coverUrl: 'gamevault-image://local/223e4567-e89b-42d3-a456-426614174000.jpg',
+      backgroundUrl: null,
+      screenshots: [],
+      releasedAt: null,
+      developers: ['Valve'],
+      publishers: ['Valve'],
+      genres: ['Acción'],
+      platforms: ['Windows'],
+      website: null,
+      metacritic: null
+    })
+
+    expect(refreshed).toMatchObject({
+      description: 'Mi descripción',
+      coverUrl: 'gamevault-image://local/223e4567-e89b-42d3-a456-426614174000.jpg',
+      genres: ['Acción']
+    })
+  })
+
+  it('keeps an unusable game card pending when the same ownership snapshot is reapplied', () => {
     const repo = makeRepo()
     repo.connectSteamAccount(steamProfile)
     repo.applySteamOwnershipSnapshot(
@@ -552,7 +621,7 @@ describe('propiedad externa', () => {
       [{ appId: 400, gameId: portal.id }]
     )
 
-    expect(repo.listPendingSteamMetadata()).toEqual([])
+    expect(repo.listPendingSteamMetadata()).toEqual([{ appId: 400, gameId: portal.id }])
   })
 
   it('requeues metadata when an AppID is remapped to another canonical game', () => {
@@ -703,13 +772,17 @@ describe('propiedad externa', () => {
 
   it('restores an aliased Steam title from ownership metadata', () => {
     const repo = makeRepo()
+    const imported = repo.createGame({
+      source: 'steam',
+      catalogId: 21110,
+      title: 'F.E.A.R.',
+      status: 'pendiente'
+    })
     repo.connectSteamAccount(steamProfile)
     repo.applySteamOwnershipSnapshot(
       [{ appId: 21110, title: 'F.E.A.R.: Extraction Point' }],
-      [{ appId: 21110, gameId: null }]
+      [{ appId: 21110, gameId: imported.id }]
     )
-    const imported = repo.listGames()[0]
-    repo.updateGame(imported.id, { ...imported, title: 'F.E.A.R.' })
 
     const repaired = repo.applySteamMetadata(21110, {
       source: 'steam',
@@ -736,6 +809,18 @@ describe('propiedad externa', () => {
 
   it('restores a distinct ownership title when Store metadata creates a collision', () => {
     const repo = makeRepo()
+    const original = repo.createGame({
+      source: 'steam',
+      catalogId: 9050,
+      title: 'DOOM 3',
+      status: 'pendiente'
+    })
+    const edition = repo.createGame({
+      source: 'steam',
+      catalogId: 208200,
+      title: 'DOOM 3',
+      status: 'pendiente'
+    })
     repo.connectSteamAccount(steamProfile)
     repo.applySteamOwnershipSnapshot(
       [
@@ -743,12 +828,10 @@ describe('propiedad externa', () => {
         { appId: 208200, title: 'DOOM 3: BFG Edition' }
       ],
       [
-        { appId: 9050, gameId: null },
-        { appId: 208200, gameId: null }
+        { appId: 9050, gameId: original.id },
+        { appId: 208200, gameId: edition.id }
       ]
     )
-    const edition = repo.listGames().find((game) => game.catalogId === 208200)!
-    repo.updateGame(edition.id, { ...edition, title: 'DOOM 3' })
 
     const repaired = repo.applySteamMetadata(208200, {
       source: 'steam',
@@ -814,16 +897,18 @@ describe('propiedad externa', () => {
 
   it('replaces only a provisional title and recognizable legacy Steam artwork', () => {
     const repo = makeRepo()
+    const imported = repo.createGame({
+      source: 'steam',
+      catalogId: 400,
+      title: 'Steam App 400',
+      status: 'pendiente',
+      coverUrl: 'https://cdn.akamai.steamstatic.com/steam/apps/400/header.jpg'
+    })
     repo.connectSteamAccount(steamProfile)
     repo.applySteamOwnershipSnapshot(
       [{ appId: 400, title: 'Steam App 400' }],
-      [{ appId: 400, gameId: null }]
+      [{ appId: 400, gameId: imported.id }]
     )
-    const imported = repo.listGames()[0]
-    repo.updateGame(imported.id, {
-      ...imported,
-      coverUrl: 'https://cdn.akamai.steamstatic.com/steam/apps/400/header.jpg'
-    })
 
     const enriched = repo.applySteamMetadata(400, {
       source: 'steam',

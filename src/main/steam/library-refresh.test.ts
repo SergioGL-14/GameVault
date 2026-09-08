@@ -73,7 +73,7 @@ function setup(): {
       catalogId: appId,
       title: appId === 400 ? 'Portal' : 'Portal 2',
       description: 'Descripción',
-      coverUrl: `https://images/${appId}.jpg`,
+      coverUrl: `gamevault-image://local/123e4567-e89b-42d3-a456-${String(appId).padStart(12, '0')}.jpg`,
       backgroundUrl: null,
       screenshots: [],
       releasedAt: null,
@@ -205,7 +205,9 @@ describe('Steam library refresh', () => {
     await refresh.connectWithApiKey('profile', 'secret')
     const preview = await refresh.preview()
     if (!preview.ok) throw new Error('preview failed')
-    metadata.getGame.mockRejectedValueOnce(new Error('store unavailable'))
+    metadata.getGame.mockRejectedValueOnce(
+      new CatalogError({ provider: 'steam', kind: 'provider-response' })
+    )
     await refresh.apply({ previewId: preview.value.previewId, resolutions: [] })
     const result = await refresh.refreshMetadata()
 
@@ -234,6 +236,114 @@ describe('Steam library refresh', () => {
       value: { metadataUpdated: 0, pending: 1, failures: [{ error: { kind: 'rate-limit' } }] }
     })
     expect(metadata.getGame).toHaveBeenCalledOnce()
+  })
+
+  it.each(['offline', 'timeout'] as const)(
+    'stops metadata requests after a %s failure',
+    async (kind) => {
+      const { refresh, metadata } = setup()
+      await refresh.connectWithApiKey('profile', 'secret')
+      const preview = await refresh.preview()
+      if (!preview.ok) throw new Error('preview failed')
+      await refresh.apply({ previewId: preview.value.previewId, resolutions: [] })
+      metadata.getGame.mockRejectedValueOnce(new CatalogError({ provider: 'steam', kind }))
+
+      await expect(refresh.refreshMetadata()).resolves.toMatchObject({
+        ok: true,
+        value: { metadataUpdated: 0, pending: 1, failures: [{ error: { kind } }] }
+      })
+      expect(metadata.getGame).toHaveBeenCalledOnce()
+    }
+  )
+
+  it('reports per-game metadata progress', async () => {
+    const { refresh } = setup()
+    await refresh.connectWithApiKey('profile', 'secret')
+    const preview = await refresh.preview()
+    if (!preview.ok) throw new Error('preview failed')
+    await refresh.apply({ previewId: preview.value.previewId, resolutions: [] })
+    const progress = vi.fn()
+
+    await refresh.refreshMetadata(progress)
+
+    expect(progress).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'running', processed: 0, total: 2, currentTitle: 'Portal' })
+    )
+    expect(progress).toHaveBeenLastCalledWith(
+      expect.objectContaining({ status: 'completed', processed: 2, total: 2, pending: 0 })
+    )
+  })
+
+  it('cancels metadata without visiting the next pending game', async () => {
+    const { refresh, metadata } = setup()
+    await refresh.connectWithApiKey('profile', 'secret')
+    const preview = await refresh.preview()
+    if (!preview.ok) throw new Error('preview failed')
+    await refresh.apply({ previewId: preview.value.previewId, resolutions: [] })
+    metadata.getGame.mockImplementationOnce(async () => {
+      refresh.cancelMetadata()
+      return {
+        source: 'steam',
+        catalogId: 400,
+        title: 'Portal',
+        description: 'Descripción',
+        coverUrl: 'gamevault-image://local/123e4567-e89b-42d3-a456-426614174000.jpg',
+        backgroundUrl: null,
+        screenshots: [],
+        releasedAt: null,
+        developers: [],
+        publishers: [],
+        genres: [],
+        platforms: [],
+        website: null,
+        metacritic: null
+      }
+    })
+
+    await expect(refresh.refreshMetadata()).resolves.toMatchObject({
+      ok: true,
+      value: { cancelled: true, metadataUpdated: 0, pending: 2 }
+    })
+    expect(metadata.getGame).toHaveBeenCalledOnce()
+  })
+
+  it('does not report a local metadata write failure as a Steam failure', async () => {
+    const { refresh, repo } = setup()
+    await refresh.connectWithApiKey('profile', 'secret')
+    const preview = await refresh.preview()
+    if (!preview.ok) throw new Error('preview failed')
+    await refresh.apply({ previewId: preview.value.previewId, resolutions: [] })
+    vi.spyOn(repo, 'applySteamMetadata').mockImplementationOnce(() => {
+      throw new Error('disk full')
+    })
+    const progress = vi.fn()
+
+    await expect(refresh.refreshMetadata(progress)).rejects.toThrow('disk full')
+    expect(progress).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'failed' }))
+  })
+
+  it('cancels and settles metadata before disconnecting the active account', async () => {
+    const { refresh, metadata } = setup()
+    await refresh.connectWithApiKey('profile', 'secret')
+    const preview = await refresh.preview()
+    if (!preview.ok) throw new Error('preview failed')
+    await refresh.apply({ previewId: preview.value.previewId, resolutions: [] })
+    let observedSignal: AbortSignal | undefined
+    metadata.getGame.mockImplementationOnce(
+      async (_appId, signal) =>
+        new Promise((_, reject) => {
+          observedSignal = signal
+          signal?.addEventListener('abort', () => reject(signal.reason), { once: true })
+        })
+    )
+
+    const metadataOperation = refresh.refreshMetadata()
+    await vi.waitFor(() => expect(metadata.getGame).toHaveBeenCalledOnce())
+    const disconnected = await refresh.disconnect()
+
+    expect(observedSignal?.aborted).toBe(true)
+    expect(disconnected.configured).toBe(false)
+    await expect(metadataOperation).resolves.toMatchObject({ ok: true, value: { cancelled: true } })
   })
 
   it('resumes metadata after a rate limit without requesting completed games again', async () => {

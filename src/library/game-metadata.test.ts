@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import type { Game } from './model'
-import { mergeMissingGameMetadata, normalizeGameTitle } from './game-metadata'
+import {
+  mergeMissingGameMetadata,
+  mergeProviderGameMetadata,
+  normalizeGameTitle
+} from './game-metadata'
 
 const game: Game = {
   id: 1,
@@ -85,6 +89,40 @@ describe('game metadata reconciliation', () => {
       description: 'Personal',
       coverUrl: existing.coverUrl,
       genres: ['Puzzle']
+    })
+  })
+
+  it('refreshes provider fields except explicit user overrides', () => {
+    const existing = {
+      ...game,
+      source: 'steam' as const,
+      catalogId: 400,
+      description: 'Descripción anterior',
+      coverUrl: 'gamevault-image://local/123e4567-e89b-42d3-a456-426614174000.png',
+      genres: ['Puzzle']
+    }
+
+    expect(
+      mergeProviderGameMetadata(
+        existing,
+        {
+          source: 'steam',
+          catalogId: 400,
+          title: 'Portal actualizado',
+          description: 'Descripción nueva',
+          status: 'pendiente',
+          coverUrl: 'gamevault-image://local/223e4567-e89b-42d3-a456-426614174000.jpg',
+          genres: ['Acción']
+        },
+        new Set(['description', 'coverUrl'])
+      )
+    ).toMatchObject({
+      title: 'Portal actualizado',
+      description: 'Descripción anterior',
+      coverUrl: existing.coverUrl,
+      genres: ['Acción'],
+      status: 'jugando',
+      notes: 'Conservar'
     })
   })
 })

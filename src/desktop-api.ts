@@ -20,6 +20,7 @@ import type {
   SteamAchievementRefresh,
   SteamConnectionStatus,
   SteamMetadataRefresh,
+  SteamMetadataProgress,
   SteamRefreshApplication,
   SteamRefreshPreview
 } from './steam/model'
@@ -33,6 +34,8 @@ export const IPC = {
   previewSteamRefresh: 'steam:refresh:preview',
   applySteamRefresh: 'steam:refresh:apply',
   refreshSteamMetadata: 'steam:metadata:refresh',
+  cancelSteamMetadata: 'steam:metadata:cancel',
+  steamMetadataProgress: 'steam:metadata:progress',
   refreshSteamAchievements: 'steam:achievements:refresh',
   listGames: 'games:list',
   createGame: 'games:create',
@@ -92,5 +95,7 @@ export interface GameVaultApi {
     input: ApplySteamRefreshInput
   ) => Promise<CatalogResult<SteamRefreshApplication>>
   refreshSteamMetadata: () => Promise<CatalogResult<SteamMetadataRefresh>>
+  cancelSteamMetadata: () => Promise<void>
+  onSteamMetadataProgress: (listener: (progress: SteamMetadataProgress) => void) => () => void
   refreshSteamAchievements: () => Promise<CatalogResult<SteamAchievementRefresh>>
 }

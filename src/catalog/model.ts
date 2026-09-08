@@ -56,7 +56,7 @@ export interface CatalogGameDetail extends CatalogSearchResult {
 
 export interface GameCatalog {
   search(query: string): Promise<CatalogSearchResult[]>
-  getGame(catalogId: number): Promise<CatalogGameDetail>
+  getGame(catalogId: number, signal?: AbortSignal): Promise<CatalogGameDetail>
 }
 
 export interface AuthenticatedGameCatalog extends GameCatalog {

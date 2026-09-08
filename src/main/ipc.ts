@@ -14,6 +14,7 @@ import {
   validateProfileInput
 } from '../library/validation'
 import type { CatalogKeyStore } from './catalog/rawg-key-store'
+import { ManagedImageError } from './images/managed-images'
 import type { LibraryRepository } from './library/sqlite-library'
 import type { SteamLibraryRefresh } from './steam/library-refresh'
 
@@ -49,6 +50,7 @@ export function registerIpc(
     try {
       return { ok: true, value: await operation() }
     } catch (reason) {
+      if (reason instanceof ManagedImageError && reason.kind === 'persistence') throw reason
       return {
         ok: false,
         error:
@@ -98,7 +100,12 @@ export function registerIpc(
     })
     return steamLibrary.apply({ previewId: input.previewId, resolutions })
   })
-  ipcMain.handle(IPC.refreshSteamMetadata, () => steamLibrary.refreshMetadata())
+  ipcMain.handle(IPC.refreshSteamMetadata, (event) =>
+    steamLibrary.refreshMetadata((progress) =>
+      event.sender.send(IPC.steamMetadataProgress, progress)
+    )
+  )
+  ipcMain.handle(IPC.cancelSteamMetadata, () => steamLibrary.cancelMetadata())
   ipcMain.handle(IPC.refreshSteamAchievements, () => steamLibrary.refreshAchievements())
   ipcMain.handle(IPC.listGames, () => repo.listGames())
   ipcMain.handle(IPC.createGame, (_event, input: unknown) => {

@@ -16,6 +16,7 @@
 - Durable local PNG, JPEG, GIF, and WebP images for game covers, profile avatars, and profile backgrounds.
 - General settings and a Playnite-inspired Steam integration with isolated web login, advanced personal-key fallback, and explicit library preview and refresh.
 - Separate manual Steam achievement import with retained provider evidence and manual override precedence.
+- Visible and cancelable Steam metadata enrichment with durable managed cover and background downloads.
 
 ### Changed
 
@@ -50,3 +51,6 @@
 - Reconciled duplicate additions by catalog identity or normalized title, filling only missing metadata while preserving personal data and existing artwork.
 - Added an explicit per-game metadata refresh for catalog-backed library entries.
 - Requeued Steam metadata once after upgrade and preserved unique ownership titles when Store aliases or collapsed names would create false duplicates, repairing entries such as the F.E.A.R. expansions automatically.
+- Defined usable Steam cards by title, description, and managed cover; incomplete cards remain pending and resume without repeating ownership import.
+- Preserved explicit catalog-field edits during automatic and per-game metadata refreshes, including edits saved while background enrichment is active.
+- Stopped Steam metadata fan-out on rate limits, authentication, offline, and timeout failures while keeping local persistence failures distinct.

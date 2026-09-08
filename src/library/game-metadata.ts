@@ -1,8 +1,33 @@
 import type { Game, GameInput } from './model'
+import { parseManagedImageReference } from './managed-image'
+
+export const CATALOG_METADATA_FIELDS = [
+  'title',
+  'description',
+  'coverUrl',
+  'backgroundUrl',
+  'screenshots',
+  'releasedAt',
+  'developers',
+  'publishers',
+  'genres',
+  'platforms',
+  'website',
+  'metacritic'
+] as const
+
+export type CatalogMetadataField = (typeof CATALOG_METADATA_FIELDS)[number]
 
 /** Normalizes a title for conservative exact matching without fuzzy edition conflation. */
 export function normalizeGameTitle(title: string): string {
   return title.trim().toLocaleLowerCase('en-US')
+}
+
+/** Returns whether imported metadata is sufficient for normal library browsing. */
+export function isUsableGameCard(game: Game): boolean {
+  return Boolean(
+    game.title.trim() && game.description.trim() && parseManagedImageReference(game.coverUrl ?? '')
+  )
 }
 
 function isReplaceableSteamArtwork(value: string | null, game: Game): boolean {
@@ -75,6 +100,82 @@ export function mergeMissingGameMetadata(current: Game, incoming: GameInput): Ga
     platforms: choose(current.platforms, incoming.platforms ?? [], (value) => value.length === 0),
     website: choose(current.website, incoming.website ?? null, (value) => value === null),
     metacritic: choose(current.metacritic, incoming.metacritic ?? null, (value) => value === null),
+    showcased: current.showcased
+  }
+}
+
+/** Refreshes provider-managed fields while preserving personal values and explicit overrides. */
+export function mergeProviderGameMetadata(
+  current: Game,
+  incoming: GameInput,
+  overrides: ReadonlySet<CatalogMetadataField>
+): GameInput {
+  const choose = <T>(
+    field: CatalogMetadataField,
+    existing: T,
+    candidate: T,
+    empty: (value: T) => boolean
+  ): T => (overrides.has(field) || empty(candidate) ? existing : candidate)
+
+  return {
+    source: current.source,
+    catalogId: current.catalogId,
+    title: choose('title', current.title, incoming.title, (value) => !value.trim()),
+    description: choose(
+      'description',
+      current.description,
+      incoming.description ?? '',
+      (value) => !value.trim()
+    ),
+    status: current.status,
+    playtimeMinutes: current.playtimeMinutes,
+    rating: current.rating,
+    notes: current.notes,
+    coverUrl: choose('coverUrl', current.coverUrl, incoming.coverUrl ?? null, (value) => !value),
+    backgroundUrl: choose(
+      'backgroundUrl',
+      current.backgroundUrl,
+      incoming.backgroundUrl ?? null,
+      (value) => !value
+    ),
+    screenshots: choose(
+      'screenshots',
+      current.screenshots,
+      incoming.screenshots ?? [],
+      (value) => value.length === 0
+    ),
+    releasedAt: choose(
+      'releasedAt',
+      current.releasedAt,
+      incoming.releasedAt ?? null,
+      (value) => !value
+    ),
+    developers: choose(
+      'developers',
+      current.developers,
+      incoming.developers ?? [],
+      (value) => value.length === 0
+    ),
+    publishers: choose(
+      'publishers',
+      current.publishers,
+      incoming.publishers ?? [],
+      (value) => value.length === 0
+    ),
+    genres: choose('genres', current.genres, incoming.genres ?? [], (value) => value.length === 0),
+    platforms: choose(
+      'platforms',
+      current.platforms,
+      incoming.platforms ?? [],
+      (value) => value.length === 0
+    ),
+    website: choose('website', current.website, incoming.website ?? null, (value) => !value),
+    metacritic: choose(
+      'metacritic',
+      current.metacritic,
+      incoming.metacritic ?? null,
+      (value) => value === null
+    ),
     showcased: current.showcased
   }
 }

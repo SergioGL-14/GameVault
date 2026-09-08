@@ -1,6 +1,6 @@
-# Library and Achievement Plan
+# Library and Achievement Delivery Plan
 
-This plan breaks external account imports and aggregated achievements into independently deliverable changes. GitHub issues own acceptance criteria and completion state.
+This plan records completed and planned external account and achievement deliveries. GitHub issues own detailed acceptance criteria and completion state.
 
 ## Planned vocabulary
 
@@ -26,17 +26,17 @@ This plan breaks external account imports and aggregated achievements into indep
 
 Tracked by [#4](https://github.com/SergioGL-14/GameVault/issues/4).
 
-- [ ] Verify and document the supported Steam identity, authentication, privacy, and owned-games contracts.
-- [ ] Add Settings with General profile fields and Connections.
-- [ ] Model canonical games separately from Steam ownerships.
-- [ ] Migrate existing manual, Steam-catalog, and RAWG-catalog games without data loss.
-- [ ] Use an isolated Steam web session as the default connection, never expose its cookies or temporary token to the renderer, and clear it on disconnect. Retain a personal Web API key as an advanced fallback, encrypted by the operating system and never stored in SQLite. Environment keys are not supported for Steam.
-- [ ] Preview exact ownership matches, new games, ambiguous canonical matches, and failures.
-- [ ] Require every visible owned game to map to an existing canonical game or create a new one; ambiguity may require confirmation but never silently skips the game.
-- [ ] Apply a confirmed owned-games snapshot transactionally and idempotently.
-- [ ] Mark absent Steam ownerships inactive only after a complete successful refresh.
-- [ ] Show game ownership platforms without creating duplicate cards.
-- [ ] Cover provider parsing, matching, migration, persistence, IPC, and renderer behavior with tests.
+- [x] Verify and document the supported Steam identity, authentication, privacy, and owned-games contracts.
+- [x] Add Settings with General profile fields and Connections.
+- [x] Model canonical games separately from Steam ownerships.
+- [x] Migrate existing manual, Steam-catalog, and RAWG-catalog games without data loss.
+- [x] Use an isolated Steam web session as the default connection, never expose its cookies or temporary token to the renderer, and clear it on disconnect. Retain a personal Web API key as an advanced fallback, encrypted by the operating system and never stored in SQLite. Environment keys are not supported for Steam.
+- [x] Preview exact ownership matches, new games, ambiguous canonical matches, and failures.
+- [x] Require every visible owned game to map to an existing canonical game or create a new one; ambiguity may require confirmation but never silently skips the game.
+- [x] Apply a confirmed owned-games snapshot transactionally and idempotently.
+- [x] Mark absent Steam ownerships inactive only after a complete successful refresh.
+- [x] Show game ownership platforms without creating duplicate cards.
+- [x] Cover provider parsing, matching, migration, persistence, IPC, and renderer behavior with tests.
 
 This delivery imports account identity, owned-game identifiers, ownership state, and basic metadata needed for usable game cards. It excludes achievements, playtime, friends, activity, reviews, and social data.
 
@@ -44,16 +44,16 @@ This delivery imports account identity, owned-game identifiers, ownership state,
 
 Tracked by [#35](https://github.com/SergioGL-14/GameVault/issues/35).
 
-- [ ] Verify and document Steam's game schema and player achievement contracts.
-- [ ] Separate canonical achievements from provider identities and unlock evidence.
-- [ ] Preserve existing custom achievements and unlock state during migration.
-- [ ] Import achievement definitions and player unlock evidence through **Refresh now**.
-- [ ] Reconcile repeated snapshots without duplicate achievements.
-- [ ] Let users force completed, force pending, or return to synchronized state.
-- [ ] Calculate game and profile totals from effective achievement state.
-- [ ] Keep the previous snapshot when any required game response is incomplete.
-- [ ] Retain last-known evidence and effective totals when Steam is disconnected, then update it after reconnection and a successful refresh.
-- [ ] Cover reconciliation, overrides, completion derivation, migration, and UI behavior with tests.
+- [x] Verify and document Steam's game schema and player achievement contracts.
+- [x] Separate canonical achievements from provider identities and unlock evidence.
+- [x] Preserve existing custom achievements and unlock state during migration.
+- [x] Import achievement definitions and player unlock evidence through **Refresh now**.
+- [x] Reconcile repeated snapshots without duplicate achievements.
+- [x] Let users force completed, force pending, or return to synchronized state.
+- [x] Calculate game and profile totals from effective achievement state.
+- [x] Keep the previous snapshot when any required game response is incomplete.
+- [x] Retain last-known evidence and effective totals when Steam is disconnected, then update it after reconnection and a successful refresh.
+- [x] Cover reconciliation, overrides, completion derivation, migration, and UI behavior with tests.
 
 Steam does not provide a universal game-completion flag. GameVault may derive completion only when a game has at least one known achievement and every effective achievement is completed. Games without known achievements retain manual status.
 

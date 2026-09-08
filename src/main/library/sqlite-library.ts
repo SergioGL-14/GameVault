@@ -1,6 +1,13 @@
 import type Database from 'better-sqlite3'
 import type { CatalogGameDetail } from '../../catalog/model'
-import { mergeMissingGameMetadata, normalizeGameTitle } from '../../library/game-metadata'
+import {
+  CATALOG_METADATA_FIELDS,
+  isUsableGameCard,
+  mergeMissingGameMetadata,
+  mergeProviderGameMetadata,
+  normalizeGameTitle
+} from '../../library/game-metadata'
+import type { CatalogMetadataField } from '../../library/game-metadata'
 import {
   validateAchievementInput,
   validateGameInput,
@@ -46,6 +53,7 @@ type Row = {
   platforms: string
   website: string | null
   metacritic: number | null
+  metadata_overrides: string
   showcased: number
   completed_at: string | null
   added_at: string
@@ -74,6 +82,15 @@ function parseList(value: string, gameId: number, field: string): string[] {
     // The contextual error below intentionally excludes persisted content.
   }
   throw new Error(`Datos dañados en el juego ${gameId}: el campo "${field}" no es una lista válida`)
+}
+
+function parseMetadataOverrides(value: string, gameId: number): Set<CatalogMetadataField> {
+  const fields = parseList(value, gameId, 'metadata_overrides')
+  const allowed = new Set<string>(CATALOG_METADATA_FIELDS)
+  if (fields.some((field) => !allowed.has(field))) {
+    throw new Error(`Datos dañados en el juego ${gameId}: los metadatos protegidos no son válidos`)
+  }
+  return new Set(fields as CatalogMetadataField[])
 }
 
 function toGame(row: Row, ownedOn: Game['ownedOn'] = []): Game {
@@ -154,11 +171,11 @@ export function createLibraryRepository(db: Database.Database): LibraryRepositor
     `INSERT INTO games (
        source, catalog_id, title, description, status, playtime_minutes, rating, notes,
        cover_url, background_url, screenshots, released_at, developers, publishers,
-       genres, platforms, website, metacritic, showcased, completed_at
+       genres, platforms, website, metacritic, metadata_overrides, showcased, completed_at
      ) VALUES (
        @source, @catalog_id, @title, @description, @status, @playtime_minutes, @rating, @notes,
        @cover_url, @background_url, @screenshots, @released_at, @developers, @publishers,
-       @genres, @platforms, @website, @metacritic, @showcased, @completed_at
+       @genres, @platforms, @website, @metacritic, @metadata_overrides, @showcased, @completed_at
      )`
   )
   const updateGameStmt = db.prepare(
@@ -168,6 +185,7 @@ export function createLibraryRepository(db: Database.Database): LibraryRepositor
        cover_url = @cover_url, background_url = @background_url, screenshots = @screenshots,
        released_at = @released_at, developers = @developers, publishers = @publishers,
        genres = @genres, platforms = @platforms, website = @website, metacritic = @metacritic,
+       metadata_overrides = @metadata_overrides,
        showcased = @showcased, completed_at = @completed_at
      WHERE id = @id`
   )
@@ -217,7 +235,8 @@ export function createLibraryRepository(db: Database.Database): LibraryRepositor
 
   function gameValues(
     input: GameInput,
-    existingCompletedAt: string | null
+    existingCompletedAt: string | null,
+    metadataOverrides: ReadonlySet<CatalogMetadataField> = new Set()
   ): Record<string, unknown> {
     const justCompleted = input.status === 'completado' && existingCompletedAt === null
     const noLongerCompleted = input.status !== 'completado' && existingCompletedAt !== null
@@ -240,6 +259,7 @@ export function createLibraryRepository(db: Database.Database): LibraryRepositor
       platforms: JSON.stringify(input.platforms ?? []),
       website: input.website ?? null,
       metacritic: input.metacritic ?? null,
+      metadata_overrides: JSON.stringify([...metadataOverrides]),
       showcased: input.showcased ? 1 : 0,
       completed_at: justCompleted
         ? new Date().toISOString()
@@ -247,6 +267,19 @@ export function createLibraryRepository(db: Database.Database): LibraryRepositor
           ? null
           : existingCompletedAt
     }
+  }
+
+  function writeGame(
+    id: number,
+    input: GameInput,
+    existing: Row,
+    metadataOverrides: ReadonlySet<CatalogMetadataField>
+  ): Game {
+    updateGameStmt.run({
+      ...gameValues(input, existing.completed_at, metadataOverrides),
+      id
+    })
+    return currentGame(id)
   }
 
   function achievementValues(input: AchievementInput): Record<string, unknown> {
@@ -290,8 +323,14 @@ export function createLibraryRepository(db: Database.Database): LibraryRepositor
             )
             .sort((first, second) => first.id - second.id)[0]
         if (!existing) return { game: this.createGame(input), created: true }
+        const row = getGameStmt.get(existing.id) as Row
         return {
-          game: this.updateGame(existing.id, mergeMissingGameMetadata(existing, input)),
+          game: writeGame(
+            existing.id,
+            mergeMissingGameMetadata(existing, input),
+            row,
+            parseMetadataOverrides(row.metadata_overrides, row.id)
+          ),
           created: false
         }
       })()
@@ -307,8 +346,17 @@ export function createLibraryRepository(db: Database.Database): LibraryRepositor
       validateGameInput(input)
       const existing = getGameStmt.get(id) as Row | undefined
       if (!existing) throw new Error(`Juego ${id} no encontrado`)
-      updateGameStmt.run({ ...gameValues(input, existing.completed_at), id })
-      return currentGame(id)
+      const current = toGame(existing)
+      const overrides = parseMetadataOverrides(existing.metadata_overrides, id)
+      for (const field of CATALOG_METADATA_FIELDS) {
+        if (
+          Object.prototype.hasOwnProperty.call(input, field) &&
+          JSON.stringify(current[field]) !== JSON.stringify(input[field])
+        ) {
+          overrides.add(field)
+        }
+      }
+      return writeGame(id, input, existing, overrides)
     },
 
     deleteGame(id: number): void {
@@ -540,6 +588,14 @@ export function createLibraryRepository(db: Database.Database): LibraryRepositor
           refreshedAt,
           account.id
         )
+        db.prepare(
+          `UPDATE provider_ownerships SET metadata_refreshed_at = NULL
+           WHERE external_account_id = ? AND game_id IN (
+             SELECT id FROM games
+             WHERE (cover_url LIKE 'http%' AND metadata_overrides NOT LIKE '%"coverUrl"%')
+                OR (background_url LIKE 'http%' AND metadata_overrides NOT LIKE '%"backgroundUrl"%')
+           )`
+        ).run(account.id)
       })()
       return this.listGames()
     },
@@ -591,14 +647,22 @@ export function createLibraryRepository(db: Database.Database): LibraryRepositor
         ) {
           throw new Error('La identidad del catálogo no coincide con la ficha')
         }
-        return this.updateGame(
+        const row = getGameStmt.get(id) as Row
+        return writeGame(
           id,
-          mergeMissingGameMetadata(current, { ...detail, status: current.status })
+          mergeProviderGameMetadata(
+            current,
+            { ...detail, status: current.status },
+            parseMetadataOverrides(row.metadata_overrides, id)
+          ),
+          row,
+          parseMetadataOverrides(row.metadata_overrides, id)
         )
       })()
     },
 
     applySteamMetadata(appId: number, detail: CatalogGameDetail): Game {
+      validateGameInput({ ...detail, status: 'pendiente' })
       return db.transaction(() => {
         const row = db
           .prepare(
@@ -611,26 +675,38 @@ export function createLibraryRepository(db: Database.Database): LibraryRepositor
           (Row & { ownership_id: number; provider_title: string }) | undefined
         if (!row) throw new Error(`No existe propiedad Steam para la aplicación ${appId}`)
         const current = toGame(row, ['steam'])
+        const overrides = parseMetadataOverrides(row.metadata_overrides, current.id)
         const catalogTitleCollision = this.listGames().some(
           (game) =>
             game.id !== current.id &&
             normalizeGameTitle(game.title) === normalizeGameTitle(detail.title)
         )
-        const currentMetadata =
-          detail.title === `Steam App ${appId}` ||
-          (catalogTitleCollision &&
-            normalizeGameTitle(current.title) === normalizeGameTitle(detail.title) &&
-            normalizeGameTitle(row.provider_title) !== normalizeGameTitle(detail.title))
-            ? { ...current, title: row.provider_title }
-            : current
-        const updated = this.updateGame(
+        const useOwnershipTitle =
+          !overrides.has('title') &&
+          (detail.title === `Steam App ${appId}` ||
+            (catalogTitleCollision &&
+              normalizeGameTitle(current.title) === normalizeGameTitle(detail.title) &&
+              normalizeGameTitle(row.provider_title) !== normalizeGameTitle(detail.title)))
+        const currentMetadata = useOwnershipTitle
+          ? { ...current, title: row.provider_title }
+          : current
+        const incomingMetadata = useOwnershipTitle
+          ? { ...detail, title: row.provider_title }
+          : detail
+        const updated = writeGame(
           current.id,
-          mergeMissingGameMetadata(currentMetadata, { ...detail, status: current.status })
+          mergeProviderGameMetadata(
+            currentMetadata,
+            { ...incomingMetadata, status: current.status },
+            overrides
+          ),
+          row,
+          overrides
         )
         db.prepare(
           `UPDATE provider_ownerships SET metadata_refreshed_at = ?
            WHERE id = ?`
-        ).run(new Date().toISOString(), row.ownership_id)
+        ).run(isUsableGameCard(updated) ? new Date().toISOString() : null, row.ownership_id)
         return updated
       })()
     },

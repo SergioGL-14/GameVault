@@ -2,7 +2,8 @@ import { CatalogError, type CatalogProvider } from '../../catalog/model'
 
 type FetchLike = typeof fetch
 
-function retryAfterSeconds(value: string | null): number | undefined {
+/** Converts either supported Retry-After form into a non-negative delay. */
+export function retryAfterSeconds(value: string | null): number | undefined {
   if (!value) return undefined
   const seconds = Number(value)
   if (Number.isSafeInteger(seconds) && seconds >= 0) return seconds
@@ -21,12 +22,14 @@ export async function requestCatalogJson(
 ): Promise<unknown> {
   let response: Response
   try {
+    const timeout = AbortSignal.timeout(10_000)
     response = await fetcher(url, {
       ...init,
       redirect: usesAuthentication ? 'error' : init.redirect,
-      signal: AbortSignal.timeout(10_000)
+      signal: init.signal ? AbortSignal.any([init.signal, timeout]) : timeout
     })
   } catch (cause) {
+    if (init.signal?.aborted) throw cause
     const kind = cause instanceof Error && cause.name === 'TimeoutError' ? 'timeout' : 'offline'
     throw new CatalogError({ provider, kind }, { cause })
   }
