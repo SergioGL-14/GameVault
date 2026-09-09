@@ -20,10 +20,10 @@ The rationale and boundaries for the next Steam and storage improvements are rec
 - [x] [#10 Support durable local profile and game images](https://github.com/SergioGL-14/GameVault/issues/10)
 - [x] [#4 Add settings and manually refresh a Steam library](https://github.com/SergioGL-14/GameVault/issues/4)
 - [x] [#35 Synchronize Steam achievements with manual overrides](https://github.com/SergioGL-14/GameVault/issues/35)
+- [x] [#43 Make Steam metadata enrichment reliable and observable](https://github.com/SergioGL-14/GameVault/issues/43)
 
 ## Next product deliveries
 
-- [ ] [#43 Make Steam metadata enrichment reliable and observable](https://github.com/SergioGL-14/GameVault/issues/43)
 - [ ] [#42 Expand Steam game records with activity and store details](https://github.com/SergioGL-14/GameVault/issues/42)
 - [ ] [#45 Reclaim orphaned managed images safely](https://github.com/SergioGL-14/GameVault/issues/45)
 - [ ] [#37 Add a second provider without duplicating games or achievements](https://github.com/SergioGL-14/GameVault/issues/37)

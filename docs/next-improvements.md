@@ -34,7 +34,6 @@ Scheduled ownership work must not overlap manual refresh, metadata enrichment, o
 
 ## Delivery order
 
-1. Merge and close #43 after review and required CI.
-2. Deliver Steam playtime, activity, and store-record expansion in #42.
-3. Add safe automatic managed-image cleanup in #45.
-4. Keep opt-in scheduled ownership refresh in #44 as a later delivery until automatic ownership changes are a demonstrated need.
+1. Deliver Steam playtime, activity, and store-record expansion in #42.
+2. Add safe automatic managed-image cleanup in #45.
+3. Keep opt-in scheduled ownership refresh in #44 as a later delivery until automatic ownership changes are a demonstrated need.
