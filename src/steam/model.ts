@@ -91,6 +91,17 @@ export interface SteamMetadataRefresh {
   metadataUpdated: number
   failures: SteamRefreshFailure[]
   pending: number
+  cancelled?: boolean
+}
+
+export interface SteamMetadataProgress {
+  status: 'running' | 'completed' | 'cancelled' | 'failed'
+  currentTitle: string | null
+  processed: number
+  total: number
+  metadataUpdated: number
+  failed: number
+  pending: number
 }
 
 export interface SteamAchievementRefresh {

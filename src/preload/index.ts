@@ -30,6 +30,15 @@ const api: GameVaultApi = {
   previewSteamRefresh: () => ipcRenderer.invoke(IPC.previewSteamRefresh),
   applySteamRefresh: (input) => ipcRenderer.invoke(IPC.applySteamRefresh, input),
   refreshSteamMetadata: () => ipcRenderer.invoke(IPC.refreshSteamMetadata),
+  cancelSteamMetadata: () => ipcRenderer.invoke(IPC.cancelSteamMetadata),
+  onSteamMetadataProgress: (listener) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      progress: Parameters<typeof listener>[0]
+    ): void => listener(progress)
+    ipcRenderer.on(IPC.steamMetadataProgress, handler)
+    return () => ipcRenderer.removeListener(IPC.steamMetadataProgress, handler)
+  },
   refreshSteamAchievements: () => ipcRenderer.invoke(IPC.refreshSteamAchievements)
 }
 

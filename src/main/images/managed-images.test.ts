@@ -9,10 +9,11 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MAX_MANAGED_IMAGE_BYTES, parseManagedImageReference } from '../../library/managed-image'
 import {
   createManagedImageRequestHandler,
+  importRemoteManagedImage,
   ManagedImageError,
   selectManagedImage
 } from './managed-images'
@@ -37,6 +38,70 @@ afterEach(() => {
 })
 
 describe('managed image import', () => {
+  it('downloads a supported remote image into managed storage', async () => {
+    const root = temporaryDirectory()
+    const managed = join(root, 'managed')
+    const fetcher = vi.fn(async () => new Response(PNG, { status: 200 }))
+
+    const reference = await importRemoteManagedImage(
+      managed,
+      'https://images.example/cover.png',
+      fetcher as typeof fetch,
+      () => UUID
+    )
+
+    expect(reference).toBe(`gamevault-image://local/${UUID}.png`)
+    expect(readFileSync(join(managed, `${UUID}.png`))).toEqual(PNG)
+    expect(fetcher).toHaveBeenCalledWith(
+      'https://images.example/cover.png',
+      expect.objectContaining({ redirect: 'manual', signal: expect.any(AbortSignal) })
+    )
+  })
+
+  it('rejects redirects instead of trusting an unvalidated destination', async () => {
+    const fetcher = vi.fn(
+      async () => new Response(null, { status: 302, headers: { location: 'http://127.0.0.1' } })
+    )
+
+    await expect(
+      importRemoteManagedImage(
+        temporaryDirectory(),
+        'https://images.example/cover.png',
+        fetcher as typeof fetch
+      )
+    ).rejects.toMatchObject({ kind: 'invalid' })
+  })
+
+  it('preserves image rate limits and their retry delay', async () => {
+    const fetcher = vi.fn(
+      async () => new Response(null, { status: 429, headers: { 'retry-after': '12' } })
+    )
+
+    await expect(
+      importRemoteManagedImage(
+        temporaryDirectory(),
+        'https://images.example/cover.png',
+        fetcher as typeof fetch
+      )
+    ).rejects.toMatchObject({ kind: 'rate-limit', retryAfterSeconds: 12 })
+  })
+
+  it('rejects oversized remote images before creating managed storage', async () => {
+    const root = temporaryDirectory()
+    const managed = join(root, 'managed')
+    const fetcher = vi.fn(
+      async () =>
+        new Response(PNG, {
+          headers: { 'content-length': String(MAX_MANAGED_IMAGE_BYTES + 1) }
+        })
+    )
+
+    await expect(
+      importRemoteManagedImage(managed, 'https://images.example/cover.png', fetcher as typeof fetch)
+    ).rejects.toThrow('10 MiB')
+    expect(existsSync(managed)).toBe(false)
+  })
+
   it.each([
     ['renamed.txt', PNG, 'png'],
     ['photo.png', JPEG, 'jpg'],

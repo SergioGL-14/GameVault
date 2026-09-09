@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import type { CatalogResult } from '../../../catalog/model'
 import { GAME_STATUSES, type Game, type GameStatus } from '../../../library/model'
 import { catalogFailureMessage } from '../catalog/catalog-failure'
@@ -9,6 +9,7 @@ import { STATUS_LABELS } from './status-labels'
 
 interface GameFormModalProps {
   game: Game
+  backgroundMetadataBusy: boolean
   onSave: (game: Game, input: ReturnType<typeof gameToInput>) => Promise<void>
   onRefreshMetadata: (game: Game) => Promise<CatalogResult<Game>>
   onDelete: (game: Game) => Promise<void>
@@ -17,6 +18,7 @@ interface GameFormModalProps {
 
 export default function GameFormModal({
   game,
+  backgroundMetadataBusy,
   onSave,
   onRefreshMetadata,
   onDelete,
@@ -33,20 +35,31 @@ export default function GameFormModal({
   const [selectingImage, setSelectingImage] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
+  const titleEdited = useRef(false)
+  const coverEdited = useRef(false)
+
+  useEffect(() => {
+    if (!titleEdited.current) setTitle(game.title)
+  }, [game.title])
+
+  useEffect(() => {
+    if (!coverEdited.current) setCoverUrl(game.coverUrl ?? '')
+  }, [game.coverUrl])
 
   async function submit(event: FormEvent): Promise<void> {
     event.preventDefault()
+    if (backgroundMetadataBusy) return
     setBusy(true)
     setError(null)
     try {
       await onSave(game, {
         ...gameToInput(game),
-        title,
+        title: titleEdited.current ? title : game.title,
         status,
         playtimeMinutes: Number(playtime),
         rating: rating ? Number(rating) : null,
         notes,
-        coverUrl: coverUrl || null,
+        coverUrl: coverEdited.current ? coverUrl || null : game.coverUrl,
         showcased
       })
     } catch (reason) {
@@ -73,7 +86,10 @@ export default function GameFormModal({
     setError(null)
     try {
       const selected = await window.api.selectLocalImage()
-      if (selected !== null) setCoverUrl(selected)
+      if (selected !== null) {
+        coverEdited.current = true
+        setCoverUrl(selected)
+      }
     } catch (reason) {
       setError(formatError(reason))
     } finally {
@@ -132,7 +148,10 @@ export default function GameFormModal({
             <input
               autoFocus
               value={title}
-              onChange={(event) => setTitle(event.target.value)}
+              onChange={(event) => {
+                titleEdited.current = true
+                setTitle(event.target.value)
+              }}
               required
             />
           </label>
@@ -175,7 +194,10 @@ export default function GameFormModal({
               <input
                 type="url"
                 value={coverUrl}
-                onChange={(event) => setCoverUrl(event.target.value)}
+                onChange={(event) => {
+                  coverEdited.current = true
+                  setCoverUrl(event.target.value)
+                }}
                 placeholder="https://…"
                 disabled={busy}
               />
@@ -194,7 +216,10 @@ export default function GameFormModal({
                 type="button"
                 className="text-button"
                 aria-label="Quitar carátula"
-                onClick={() => setCoverUrl('')}
+                onClick={() => {
+                  coverEdited.current = true
+                  setCoverUrl('')
+                }}
                 disabled={busy || !coverUrl}
               >
                 Quitar imagen
@@ -242,7 +267,7 @@ export default function GameFormModal({
           <button type="button" className="quiet-button" onClick={onClose} disabled={busy}>
             Cancelar
           </button>
-          <button type="submit" className="action-button" disabled={busy}>
+          <button type="submit" className="action-button" disabled={busy || backgroundMetadataBusy}>
             Guardar cambios
           </button>
         </footer>

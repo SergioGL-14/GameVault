@@ -51,6 +51,7 @@ const mocks = vi.hoisted(() => {
       >(),
     createLibraryRepository: vi.fn(() => ({ repository: true })),
     createManagedImageRequestHandler: vi.fn(() => vi.fn()),
+    createRemoteManagedImageImporter: vi.fn(() => vi.fn()),
     selectManagedImage: vi.fn<
       (directory: string, pickFile: () => Promise<string | null>) => Promise<string | null>
     >(() => Promise.resolve(null))
@@ -99,6 +100,7 @@ vi.mock('./catalog/rawg', () => ({ createRawgCatalog: vi.fn(() => ({})) }))
 vi.mock('./catalog/steam', () => ({ createSteamCatalog: vi.fn(() => ({})) }))
 vi.mock('./images/managed-images', () => ({
   createManagedImageRequestHandler: mocks.createManagedImageRequestHandler,
+  createRemoteManagedImageImporter: mocks.createRemoteManagedImageImporter,
   selectManagedImage: mocks.selectManagedImage
 }))
 

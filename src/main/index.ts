@@ -9,7 +9,11 @@ import { createCatalogKeyStore } from './catalog/rawg-key-store'
 import { createRawgCatalog } from './catalog/rawg'
 import { createSteamCatalog } from './catalog/steam'
 import { MANAGED_IMAGE_SCHEME } from '../library/managed-image'
-import { createManagedImageRequestHandler, selectManagedImage } from './images/managed-images'
+import {
+  createManagedImageRequestHandler,
+  createRemoteManagedImageImporter,
+  selectManagedImage
+} from './images/managed-images'
 import { createSteamKeyStore } from './steam/key-store'
 import { createSteamAccountProvider } from './steam/web-api'
 import { createSteamLibraryRefresh } from './steam/library-refresh'
@@ -123,7 +127,10 @@ app.whenReady().then(() => {
       (process.platform !== 'linux' || safeStorage.getSelectedStorageBackend() !== 'basic_text')
   )
   const repository = createLibraryRepository(db)
-  const steamCatalog = createSteamCatalog()
+  const steamCatalog = createSteamCatalog(
+    fetch,
+    createRemoteManagedImageImporter(managedImagesDirectory)
+  )
   const steamSession = createSteamWebSession()
   registerIpc(
     repository,

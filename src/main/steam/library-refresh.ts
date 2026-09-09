@@ -2,10 +2,12 @@ import { randomUUID } from 'node:crypto'
 import {
   CatalogError,
   type CatalogFailure,
+  type CatalogGameDetail,
   type CatalogResult,
   type GameCatalog
 } from '../../catalog/model'
 import { reconcileSteamOwnership } from '../../library/ownership'
+import { isUsableGameCard } from '../../library/game-metadata'
 import type {
   ApplySteamRefreshInput,
   SteamAccountProvider,
@@ -13,6 +15,7 @@ import type {
   SteamConnectionStatus,
   SteamCredential,
   SteamMetadataRefresh,
+  SteamMetadataProgress,
   SteamOwnedGame,
   SteamRefreshItem,
   SteamRefreshPreview,
@@ -33,7 +36,10 @@ export interface SteamLibraryRefresh {
   disconnect(): Promise<SteamConnectionStatus>
   preview(): Promise<CatalogResult<SteamRefreshPreview>>
   apply(input: ApplySteamRefreshInput): Promise<CatalogResult<SteamRefreshApplication>>
-  refreshMetadata(): Promise<CatalogResult<SteamMetadataRefresh>>
+  refreshMetadata(
+    onProgress?: (progress: SteamMetadataProgress) => void
+  ): Promise<CatalogResult<SteamMetadataRefresh>>
+  cancelMetadata(): void
   refreshAchievements(): Promise<CatalogResult<SteamAchievementRefresh>>
 }
 
@@ -52,6 +58,13 @@ export function createSteamLibraryRefresh(
     librarySignature: string
     createdAt: number
   } | null = null
+  let activeMetadata: Promise<CatalogResult<SteamMetadataRefresh>> | null = null
+  let metadataController: AbortController | null = null
+
+  async function stopMetadata(): Promise<void> {
+    metadataController?.abort()
+    await activeMetadata?.catch(() => undefined)
+  }
 
   function librarySignature(): string {
     return JSON.stringify(
@@ -106,6 +119,7 @@ export function createSteamLibraryRefresh(
     connectWeb() {
       return result(async () => {
         const authentication = await webSession.login()
+        await stopMetadata()
         const profile = {
           steamId: authentication.steamId,
           personaName: 'Cuenta de Steam',
@@ -127,6 +141,7 @@ export function createSteamLibraryRefresh(
       return result(async () => {
         const credential: SteamCredential = { kind: 'api-key', value: key }
         const profile = await provider.resolveProfile(profileInput, credential)
+        await stopMetadata()
         await webSession.clear()
         const previousKey = keys.status().source === 'saved' ? keys.get() : null
         keys.save(key)
@@ -142,6 +157,7 @@ export function createSteamLibraryRefresh(
       })
     },
     async disconnect() {
+      await stopMetadata()
       await webSession.clear()
       keys.clear()
       repo.disconnectSteamAccount()
@@ -225,38 +241,104 @@ export function createSteamLibraryRefresh(
         return { games: repo.listGames() }
       })
     },
-    refreshMetadata() {
-      return result(async () => {
+    refreshMetadata(onProgress) {
+      if (activeMetadata) return activeMetadata
+      const controller = new AbortController()
+      metadataController = controller
+      const operation = (async (): Promise<CatalogResult<SteamMetadataRefresh>> => {
         if (!repo.getSteamAccount()) {
-          throw new CatalogError({ provider: 'steam', kind: 'authentication' })
+          return { ok: false, error: { provider: 'steam', kind: 'authentication' } }
         }
         const gamesById = new Map(repo.listGames().map((game) => [game.id, game]))
         const ownerships = repo.listPendingSteamMetadata()
         const failures: SteamMetadataRefresh['failures'] = []
         let metadataUpdated = 0
         let processed = 0
-        for (const ownership of ownerships) {
-          const title = gamesById.get(ownership.gameId)?.title ?? `Steam App ${ownership.appId}`
+        const emit = (
+          status: SteamMetadataProgress['status'],
+          currentTitle: string | null
+        ): void => {
           try {
-            const detail = await metadata.getGame(ownership.appId)
-            repo.applySteamMetadata(ownership.appId, detail)
-            metadataUpdated += 1
+            onProgress?.({
+              status,
+              currentTitle,
+              processed,
+              total: ownerships.length,
+              metadataUpdated,
+              failed: failures.length,
+              pending: ownerships.length - processed
+            })
+          } catch {
+            // Renderer progress is observational and cannot change persisted import behavior.
+          }
+        }
+        for (const ownership of ownerships) {
+          if (controller.signal.aborted) break
+          const title = gamesById.get(ownership.gameId)?.title ?? `Steam App ${ownership.appId}`
+          emit('running', title)
+          let detail: CatalogGameDetail
+          try {
+            detail = await metadata.getGame(ownership.appId, controller.signal)
           } catch (reason) {
+            if (controller.signal.aborted) break
+            if (!(reason instanceof CatalogError)) {
+              emit('failed', null)
+              throw reason
+            }
             const error = catalogFailure(reason)
             failures.push({ appId: ownership.appId, title, error })
             processed += 1
-            if (error.kind === 'rate-limit' || error.kind === 'authentication') break
+            emit('running', title)
+            if (
+              error.kind === 'rate-limit' ||
+              error.kind === 'authentication' ||
+              error.kind === 'offline' ||
+              error.kind === 'timeout'
+            ) {
+              break
+            }
             continue
           }
+          if (controller.signal.aborted) break
+          try {
+            const updated = repo.applySteamMetadata(ownership.appId, detail)
+            if (isUsableGameCard(updated)) metadataUpdated += 1
+            else {
+              failures.push({
+                appId: ownership.appId,
+                title,
+                error: { provider: 'steam', kind: 'provider-response' }
+              })
+            }
+          } catch (reason) {
+            emit('failed', null)
+            throw reason
+          }
           processed += 1
+          emit('running', title)
         }
-        return {
+        const cancelled = controller.signal.aborted
+        const value = {
           games: repo.listGames(),
           metadataUpdated,
           failures,
-          pending: ownerships.length - processed
+          pending: ownerships.length - processed,
+          cancelled
         }
-      })
+        emit(cancelled ? 'cancelled' : 'completed', null)
+        return { ok: true, value }
+      })()
+      activeMetadata = operation
+      void operation
+        .finally(() => {
+          if (activeMetadata === operation) activeMetadata = null
+          if (metadataController === controller) metadataController = null
+        })
+        .catch(() => undefined)
+      return operation
+    },
+    cancelMetadata() {
+      metadataController?.abort()
     },
     refreshAchievements() {
       return result(async () => {

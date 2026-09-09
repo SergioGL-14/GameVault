@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3'
 
-const SCHEMA_VERSION = 7
+const SCHEMA_VERSION = 8
 
 const GAME_TABLE = `CREATE TABLE IF NOT EXISTS games (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -23,6 +23,7 @@ const GAME_TABLE = `CREATE TABLE IF NOT EXISTS games (
   platforms TEXT NOT NULL DEFAULT '[]',
   website TEXT,
   metacritic INTEGER CHECK (metacritic BETWEEN 0 AND 100),
+  metadata_overrides TEXT NOT NULL DEFAULT '[]',
   showcased INTEGER NOT NULL DEFAULT 0,
   completed_at TEXT,
   added_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -117,7 +118,8 @@ const GAME_COLUMNS: Record<string, string> = {
   genres: "TEXT NOT NULL DEFAULT '[]'",
   platforms: "TEXT NOT NULL DEFAULT '[]'",
   website: 'TEXT',
-  metacritic: 'INTEGER'
+  metacritic: 'INTEGER',
+  metadata_overrides: "TEXT NOT NULL DEFAULT '[]'"
 }
 
 function needsSteamSourceMigration(db: Database.Database): boolean {
@@ -148,12 +150,12 @@ function allowSteamSource(db: Database.Database): void {
       INSERT INTO games_with_steam (
         id, source, catalog_id, title, description, status, playtime_minutes, rating, notes,
         cover_path, cover_url, background_url, screenshots, released_at, developers, publishers,
-        genres, platforms, website, metacritic, showcased, completed_at, added_at
+        genres, platforms, website, metacritic, metadata_overrides, showcased, completed_at, added_at
       )
       SELECT
         id, source, catalog_id, title, description, status, playtime_minutes, rating, notes,
         cover_path, cover_url, background_url, screenshots, released_at, developers, publishers,
-        genres, platforms, website, metacritic, showcased, completed_at, added_at
+        genres, platforms, website, metacritic, metadata_overrides, showcased, completed_at, added_at
       FROM games;
       DROP TABLE games;
       ALTER TABLE games_with_steam RENAME TO games;
@@ -176,6 +178,95 @@ function addMissingColumns(
   )
   for (const [name, definition] of Object.entries(columns)) {
     if (!existing.has(name)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${definition}`)
+  }
+}
+
+function isSteamMedia(value: string | null): boolean {
+  if (!value) return false
+  try {
+    const host = new URL(value).hostname
+    return host.endsWith('.steamstatic.com') || host === 'steamcdn-a.akamaihd.net'
+  } catch {
+    return false
+  }
+}
+
+function preserveExistingMetadataEdits(db: Database.Database): void {
+  const rows = db
+    .prepare(
+      `SELECT id, title, description, cover_url, background_url, screenshots, released_at,
+              developers, publishers, genres, platforms, website, metacritic
+       FROM games`
+    )
+    .all() as {
+    id: number
+    title: string
+    description: string
+    cover_url: string | null
+    background_url: string | null
+    screenshots: string
+    released_at: string | null
+    developers: string
+    publishers: string
+    genres: string
+    platforms: string
+    website: string | null
+    metacritic: number | null
+  }[]
+  const update = db.prepare('UPDATE games SET metadata_overrides = ? WHERE id = ?')
+  for (const row of rows) {
+    // Older schemas have no provenance, so preserving existing values is safer than guessing
+    // whether text was edited. Recognizable Steam media remains provider-managed.
+    const fields = [
+      row.title.trim() ? 'title' : null,
+      row.description.trim() ? 'description' : null,
+      row.cover_url && !isSteamMedia(row.cover_url) ? 'coverUrl' : null,
+      row.background_url && !isSteamMedia(row.background_url) ? 'backgroundUrl' : null,
+      row.screenshots !== '[]' ? 'screenshots' : null,
+      row.released_at ? 'releasedAt' : null,
+      row.developers !== '[]' ? 'developers' : null,
+      row.publishers !== '[]' ? 'publishers' : null,
+      row.genres !== '[]' ? 'genres' : null,
+      row.platforms !== '[]' ? 'platforms' : null,
+      row.website ? 'website' : null,
+      row.metacritic !== null ? 'metacritic' : null
+    ].filter((field): field is string => field !== null)
+    update.run(JSON.stringify(fields), row.id)
+  }
+}
+
+function requeueIncompleteSteamMetadata(db: Database.Database): void {
+  const rows = db
+    .prepare(
+      `SELECT ownership.id, game.title, game.description, game.cover_url, game.background_url,
+              game.metadata_overrides
+       FROM provider_ownerships ownership
+       JOIN external_accounts account ON account.id = ownership.external_account_id
+       JOIN games game ON game.id = ownership.game_id
+       WHERE account.provider = 'steam'`
+    )
+    .all() as {
+    id: number
+    title: string
+    description: string
+    cover_url: string | null
+    background_url: string | null
+    metadata_overrides: string
+  }[]
+  const requeue = db.prepare(
+    'UPDATE provider_ownerships SET metadata_refreshed_at = NULL WHERE id = ?'
+  )
+  for (const row of rows) {
+    const overrides = new Set<string>(JSON.parse(row.metadata_overrides))
+    if (
+      !row.title.trim() ||
+      !row.description.trim() ||
+      !row.cover_url?.trim() ||
+      (isSteamMedia(row.cover_url) && !overrides.has('coverUrl')) ||
+      (isSteamMedia(row.background_url) && !overrides.has('backgroundUrl'))
+    ) {
+      requeue.run(row.id)
+    }
   }
 }
 
@@ -209,6 +300,9 @@ export function openDatabase(file: string): Database.Database {
       }
       db.exec(OWNERSHIP_SCHEMA)
       addMissingColumns(db, 'provider_ownerships', OWNERSHIP_COLUMNS)
+      db.exec(
+        'UPDATE games SET cover_url = cover_path WHERE cover_url IS NULL AND cover_path IS NOT NULL'
+      )
       if (version === 5 || version === 6) {
         // Re-run Steam enrichment once so persisted alias metadata is repaired by the current mapper.
         db.exec(`
@@ -218,8 +312,11 @@ export function openDatabase(file: string): Database.Database {
           );
         `)
       }
+      if (version < 8) {
+        preserveExistingMetadataEdits(db)
+        requeueIncompleteSteamMetadata(db)
+      }
       db.exec(`
-        UPDATE games SET cover_url = cover_path WHERE cover_url IS NULL AND cover_path IS NOT NULL;
         CREATE UNIQUE INDEX IF NOT EXISTS games_catalog_source_id
           ON games(source, catalog_id) WHERE catalog_id IS NOT NULL;
         CREATE UNIQUE INDEX IF NOT EXISTS achievements_provider_id

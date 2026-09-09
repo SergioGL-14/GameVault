@@ -9,7 +9,7 @@ import type {
   Profile,
   ProfileInput
 } from '../../library/model'
-import type { SteamMetadataRefresh } from '../../steam/model'
+import type { SteamMetadataProgress, SteamMetadataRefresh } from '../../steam/model'
 import AddGameModal from './catalog/AddGameModal'
 import { formatError } from './format'
 import GameDetailView from './library/GameDetailView'
@@ -57,6 +57,10 @@ function App(): React.JSX.Element {
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [steamMetadataResult, setSteamMetadataResult] = useState<SteamMetadataRefresh | null>(null)
+  const [steamMetadataProgress, setSteamMetadataProgress] = useState<SteamMetadataProgress | null>(
+    null
+  )
+  const [steamMetadataBusy, setSteamMetadataBusy] = useState(false)
   const contentRef = useRef<HTMLElement>(null)
   const returnFocusRef = useRef<HTMLElement | null>(null)
   const returnGameIdRef = useRef<number | null>(null)
@@ -74,6 +78,9 @@ function App(): React.JSX.Element {
     try {
       const [nextGames, nextProfile, nextStats] = await fetchAll()
       setGames(nextGames)
+      setEditGame((current) =>
+        current ? (nextGames.find((game) => game.id === current.id) ?? current) : null
+      )
       setProfile(nextProfile)
       setProfileLoaded(true)
       setStats(nextStats)
@@ -92,9 +99,13 @@ function App(): React.JSX.Element {
       return metadataRefreshRef.current
     }
     const generation = metadataGenerationRef.current
+    setSteamMetadataBusy(true)
     const request = window.api.refreshSteamMetadata().then((result) => {
       if (generation !== metadataGenerationRef.current) return result
-      if (!result.ok) return result
+      if (!result.ok) {
+        setSteamMetadataBusy(false)
+        return result
+      }
       setGames(result.value.games)
       setEditGame((current) =>
         current ? (result.value.games.find((game) => game.id === current.id) ?? current) : null
@@ -116,7 +127,16 @@ function App(): React.JSX.Element {
           void metadataRunnerRef.current?.()
         }, delay)
       }
+      setSteamMetadataBusy(false)
       return result
+    })
+    void request.catch(async (reason: unknown) => {
+      if (generation !== metadataGenerationRef.current) return
+      await refresh()
+      if (!metadataRefreshRef.current || metadataRefreshRef.current === request) {
+        setSteamMetadataBusy(false)
+      }
+      setError(formatError(reason))
     })
     metadataRefreshRef.current = request
     const clearRequest = (): void => {
@@ -128,7 +148,7 @@ function App(): React.JSX.Element {
     }
     void request.then(clearRequest, clearRequest)
     return request
-  }, [])
+  }, [refresh])
 
   const resetSteamMetadata = useCallback((): void => {
     metadataGenerationRef.current += 1
@@ -136,7 +156,27 @@ function App(): React.JSX.Element {
     metadataCooldownResultRef.current = null
     if (metadataTimerRef.current) clearTimeout(metadataTimerRef.current)
     metadataTimerRef.current = null
+    setSteamMetadataBusy(false)
     setSteamMetadataResult(null)
+  }, [])
+
+  useEffect(() => {
+    return window.api.onSteamMetadataProgress((progress) => {
+      if (progress.status === 'running') {
+        setSteamMetadataProgress(progress)
+        return
+      }
+      setSteamMetadataProgress(null)
+      if (progress.status === 'cancelled') {
+        setNotice(`Metadatos cancelados. Quedan ${progress.pending} fichas pendientes.`)
+      } else if (progress.status === 'completed') {
+        setNotice(
+          progress.pending > 0
+            ? `Metadatos detenidos: quedan ${progress.pending} fichas pendientes y ${progress.failed} con error.`
+            : `Metadatos completados: ${progress.metadataUpdated} fichas actualizadas y ${progress.failed} con error.`
+        )
+      }
+    })
   }, [])
 
   useEffect(() => {
@@ -206,6 +246,18 @@ function App(): React.JSX.Element {
   }, [selectedGameId])
 
   const selectedGame = games.find((game) => game.id === selectedGameId) ?? null
+
+  async function cancelSteamMetadata(): Promise<void> {
+    metadataRefreshQueuedRef.current = false
+    metadataCooldownResultRef.current = null
+    if (metadataTimerRef.current) clearTimeout(metadataTimerRef.current)
+    metadataTimerRef.current = null
+    try {
+      await window.api.cancelSteamMetadata()
+    } catch (reason) {
+      setError(formatError(reason))
+    }
+  }
 
   useEffect(() => {
     const focusTarget = focusTargetRef.current
@@ -468,6 +520,30 @@ function App(): React.JSX.Element {
         </div>
       )}
 
+      {steamMetadataProgress?.status === 'running' && (
+        <aside className="metadata-progress" role="status" aria-live="polite">
+          <div>
+            <strong>Completando fichas de Steam</strong>
+            <span>
+              {steamMetadataProgress.processed} de {steamMetadataProgress.total}
+              {steamMetadataProgress.currentTitle ? ` · ${steamMetadataProgress.currentTitle}` : ''}
+            </span>
+          </div>
+          <progress
+            aria-label="Progreso de metadatos de Steam"
+            value={steamMetadataProgress.processed}
+            max={Math.max(steamMetadataProgress.total, 1)}
+          />
+          <span>
+            {steamMetadataProgress.metadataUpdated} completadas · {steamMetadataProgress.failed} con
+            error
+          </span>
+          <button type="button" className="secondary-button" onClick={cancelSteamMetadata}>
+            Cancelar metadatos de Steam
+          </button>
+        </aside>
+      )}
+
       <main className="content" ref={contentRef}>
         {selectedGame ? (
           <GameDetailView
@@ -506,6 +582,7 @@ function App(): React.JSX.Element {
       {editGame && (
         <GameFormModal
           game={editGame}
+          backgroundMetadataBusy={steamMetadataBusy}
           onSave={updateGame}
           onRefreshMetadata={refreshGameMetadata}
           onDelete={deleteGame}

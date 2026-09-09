@@ -1730,6 +1730,39 @@ select:focus {
   color: var(--green);
 }
 
+.metadata-progress {
+  position: fixed;
+  z-index: 20;
+  right: 24px;
+  bottom: 24px;
+  display: grid;
+  width: min(420px, calc(100vw - 32px));
+  gap: 12px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  background: rgba(12, 19, 39, 0.97);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
+}
+
+.metadata-progress div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.metadata-progress span {
+  color: var(--muted);
+}
+
+.metadata-progress progress {
+  width: 100%;
+  accent-color: var(--green);
+}
+
+.metadata-progress button {
+  justify-self: end;
+}
+
 .connection-avatar {
   width: 56px;
   height: 56px;

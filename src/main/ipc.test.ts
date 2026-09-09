@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { CatalogError, type AuthenticatedGameCatalog, type GameCatalog } from '../catalog/model'
 import { IPC } from '../desktop-api'
+import { ManagedImageError } from './images/managed-images'
 import type { LibraryRepository } from './library/sqlite-library'
 import type { CatalogKeyStore } from './catalog/rawg-key-store'
 import type { SteamLibraryRefresh } from './steam/library-refresh'
@@ -101,6 +102,7 @@ const steamLibrary: SteamLibraryRefresh = {
   preview: method<SteamLibraryRefresh['preview']>(),
   apply: method<SteamLibraryRefresh['apply']>(),
   refreshMetadata: method<SteamLibraryRefresh['refreshMetadata']>(),
+  cancelMetadata: method<SteamLibraryRefresh['cancelMetadata']>(),
   refreshAchievements: method<SteamLibraryRefresh['refreshAchievements']>()
 }
 
@@ -118,7 +120,9 @@ beforeEach(() => {
 
 describe('IPC registration', () => {
   it('registers every desktop API channel', () => {
-    expect([...electron.handlers.keys()]).toEqual(Object.values(IPC))
+    expect([...electron.handlers.keys()]).toEqual(
+      Object.values(IPC).filter((channel) => channel !== IPC.steamMetadataProgress)
+    )
   })
 
   it('forwards valid library calls', () => {
@@ -226,6 +230,15 @@ describe('IPC registration', () => {
     await expect(invoke(IPC.refreshGameMetadata, game.id)).rejects.toThrow('SQLite write failed')
   })
 
+  it('does not disguise managed-image persistence failures as catalog failures', async () => {
+    vi.mocked(repo.getGame).mockReturnValue(game)
+    vi.mocked(steamCatalog.getGame).mockRejectedValue(
+      new ManagedImageError('Image write failed', 'persistence')
+    )
+
+    await expect(invoke(IPC.refreshGameMetadata, game.id)).rejects.toThrow('Image write failed')
+  })
+
   it('forwards local image selection without renderer-supplied paths', async () => {
     selectLocalImage.mockResolvedValueOnce('gamevault-image://local/image.png')
 
@@ -240,6 +253,7 @@ describe('IPC registration', () => {
     await invoke(IPC.connectSteamApiKey, 'profile', 'key')
     await invoke(IPC.previewSteamRefresh)
     await invoke(IPC.refreshSteamMetadata)
+    await invoke(IPC.cancelSteamMetadata)
     await invoke(IPC.refreshSteamAchievements)
     invoke(IPC.applySteamRefresh, { previewId: 'preview', resolutions: [] })
     invoke(IPC.disconnectSteam)
@@ -248,10 +262,37 @@ describe('IPC registration', () => {
     expect(steamLibrary.connectWeb).toHaveBeenCalledWith()
     expect(steamLibrary.connectWithApiKey).toHaveBeenCalledWith('profile', 'key')
     expect(steamLibrary.preview).toHaveBeenCalledWith()
-    expect(steamLibrary.refreshMetadata).toHaveBeenCalledWith()
+    expect(steamLibrary.refreshMetadata).toHaveBeenCalledWith(expect.any(Function))
+    expect(steamLibrary.cancelMetadata).toHaveBeenCalledWith()
     expect(steamLibrary.refreshAchievements).toHaveBeenCalledWith()
     expect(steamLibrary.apply).toHaveBeenCalledWith({ previewId: 'preview', resolutions: [] })
     expect(steamLibrary.disconnect).toHaveBeenCalledWith()
+  })
+
+  it('forwards Steam metadata progress only to the requesting renderer', async () => {
+    const send = vi.fn()
+    const progress = {
+      status: 'running' as const,
+      currentTitle: 'Portal',
+      processed: 0,
+      total: 1,
+      metadataUpdated: 0,
+      failed: 0,
+      pending: 1
+    }
+    vi.mocked(steamLibrary.refreshMetadata).mockImplementationOnce(async (onProgress) => {
+      onProgress?.(progress)
+      return {
+        ok: true,
+        value: { games: [], metadataUpdated: 0, failures: [], pending: 1 }
+      }
+    })
+    const handler = electron.handlers.get(IPC.refreshSteamMetadata)
+    if (!handler) throw new Error('Missing metadata handler')
+
+    await handler({ sender: { send } })
+
+    expect(send).toHaveBeenCalledWith(IPC.steamMetadataProgress, progress)
   })
 })
 

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { ManagedImageError } from '../images/managed-images'
 import { createSteamCatalog } from './steam'
 
 describe('catálogo de Steam', () => {
@@ -72,6 +73,89 @@ describe('catálogo de Steam', () => {
     expect(game.website).toBe('https://store.steampowered.com/app/400')
   })
 
+  it('imports Steam cover and background through managed storage', async () => {
+    const fetcher = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            '400': {
+              success: true,
+              data: {
+                type: 'game',
+                name: 'Portal',
+                short_description: 'Descripción',
+                background:
+                  'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/400/background.jpg'
+              }
+            }
+          })
+        )
+    )
+    const importImage = vi
+      .fn()
+      .mockResolvedValueOnce('gamevault-image://local/123e4567-e89b-42d3-a456-426614174000.jpg')
+      .mockResolvedValueOnce('gamevault-image://local/223e4567-e89b-42d3-a456-426614174000.jpg')
+
+    const game = await createSteamCatalog(fetcher as typeof fetch, importImage).getGame(400)
+
+    expect(game).toMatchObject({
+      coverUrl: 'gamevault-image://local/123e4567-e89b-42d3-a456-426614174000.jpg',
+      backgroundUrl: 'gamevault-image://local/223e4567-e89b-42d3-a456-426614174000.jpg'
+    })
+    expect(importImage).toHaveBeenCalledTimes(2)
+  })
+
+  it.each(['offline', 'timeout', 'rate-limit'] as const)(
+    'preserves a managed image %s failure so metadata fan-out can stop',
+    async (kind) => {
+      const fetcher = vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              '400': {
+                success: true,
+                data: { type: 'game', name: 'Portal', short_description: 'Descripción' }
+              }
+            })
+          )
+      )
+      const importImage = vi.fn(async () => {
+        throw new ManagedImageError('download failed', kind, kind === 'rate-limit' ? 12 : undefined)
+      })
+
+      await expect(
+        createSteamCatalog(fetcher as typeof fetch, importImage).getGame(400)
+      ).rejects.toMatchObject({
+        failure: {
+          provider: 'steam',
+          kind,
+          ...(kind === 'rate-limit' ? { retryAfterSeconds: 12 } : {})
+        }
+      })
+    }
+  )
+
+  it('does not disguise managed image persistence failures as provider failures', async () => {
+    const fetcher = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            '400': {
+              success: true,
+              data: { type: 'game', name: 'Portal', short_description: 'Descripción' }
+            }
+          })
+        )
+    )
+    const failure = new ManagedImageError('write failed', 'persistence')
+
+    await expect(
+      createSteamCatalog(fetcher as typeof fetch, async () => {
+        throw failure
+      }).getGame(400)
+    ).rejects.toBe(failure)
+  })
+
   it('uses the conventional vertical asset when Steam omits Store artwork', async () => {
     const fetcher = vi.fn(
       async () =>
@@ -85,6 +169,29 @@ describe('catálogo de Steam', () => {
     const game = await createSteamCatalog(fetcher as typeof fetch).getGame(400)
 
     expect(game.coverUrl).toContain('/400/library_600x900.jpg')
+  })
+
+  it('uses detailed Store text when the short description is empty', async () => {
+    const fetcher = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            '400': {
+              success: true,
+              data: {
+                type: 'game',
+                name: 'Portal',
+                short_description: '',
+                detailed_description: '<p>Descripción detallada.</p>'
+              }
+            }
+          })
+        )
+    )
+
+    await expect(createSteamCatalog(fetcher as typeof fetch).getGame(400)).resolves.toMatchObject({
+      description: 'Descripción detallada.'
+    })
   })
 
   it('falls back to Store artwork when the vertical asset does not exist', async () => {
@@ -107,30 +214,13 @@ describe('catálogo de Steam', () => {
     expect(game.coverUrl).toBe('https://images/header.jpg')
   })
 
-  it('retries temporary Store rate limits before rejecting a game', async () => {
-    vi.useFakeTimers()
-    try {
-      const fetcher = vi
-        .fn()
-        .mockResolvedValueOnce(new Response(null, { status: 429 }))
-        .mockResolvedValueOnce(new Response(null, { status: 429 }))
-        .mockResolvedValueOnce(
-          new Response(
-            JSON.stringify({
-              '400': { success: true, data: { type: 'game', name: 'Portal' } }
-            })
-          )
-        )
-        .mockResolvedValueOnce(new Response(null, { status: 404 }))
+  it('returns a Store rate limit immediately to the resumable library flow', async () => {
+    const fetcher = vi.fn(async () => new Response(null, { status: 429 }))
 
-      const detail = createSteamCatalog(fetcher as typeof fetch).getGame(400)
-      await vi.advanceTimersByTimeAsync(5_000)
-
-      await expect(detail).resolves.toMatchObject({ catalogId: 400, title: 'Portal' })
-      expect(fetcher).toHaveBeenCalledTimes(4)
-    } finally {
-      vi.useRealTimers()
-    }
+    await expect(createSteamCatalog(fetcher as typeof fetch).getGame(400)).rejects.toMatchObject({
+      failure: { provider: 'steam', kind: 'rate-limit' }
+    })
+    expect(fetcher).toHaveBeenCalledOnce()
   })
 
   it.each(['demo', 'mod'])('enriches an imported Steam %s', async (type) => {
@@ -225,7 +315,7 @@ describe('catálogo de Steam', () => {
     ).rejects.toMatchObject({ failure: { provider: 'steam', kind: 'provider-response' } })
   })
 
-  it('rechaza valores escalares y listas malformados', async () => {
+  it('rechaza valores escalares malformados en resultados de búsqueda', async () => {
     const malformedSearch = vi.fn(
       async () =>
         new Response(
@@ -235,18 +325,28 @@ describe('catálogo de Steam', () => {
     await expect(
       createSteamCatalog(malformedSearch as typeof fetch).search('Portal')
     ).rejects.toMatchObject({ failure: { provider: 'steam', kind: 'provider-response' } })
+  })
 
+  it('conserva el núcleo válido cuando un campo opcional de detalle está malformado', async () => {
     const malformedDetail = vi.fn(
       async () =>
         new Response(
           JSON.stringify({
-            '400': { success: true, data: { type: 'game', name: 'Portal', developers: [null] } }
+            '400': {
+              success: true,
+              data: {
+                type: 'game',
+                name: 'Portal',
+                short_description: 'Descripción válida',
+                developers: [null]
+              }
+            }
           })
         )
     )
     await expect(
       createSteamCatalog(malformedDetail as typeof fetch).getGame(400)
-    ).rejects.toMatchObject({ failure: { provider: 'steam', kind: 'provider-response' } })
+    ).resolves.toMatchObject({ description: 'Descripción válida', developers: [] })
   })
 
   it('rechaza identificadores y puntuaciones fuera del dominio', async () => {

@@ -81,7 +81,7 @@ Steam exposes achievement definitions and per-achievement unlock state, not a do
 ## Limits and stability
 
 - Valve's terms impose a documented limit of **100,000 Web API calls per day**. [API terms, section 2](https://steamcommunity.com/dev/apiterms)
-- Valve documents HTTP `429` for rate limiting but publishes no per-second quota, burst allowance, response headers, or retry interval for these methods. Metadata enrichment retries one Store AppID up to ten times, honoring `Retry-After` when present and using Playnite's 2.5-second fallback when Steam omits it. Exhaustion stops fan-out and leaves the remaining work pending. [Error codes and responses](https://partner.steamgames.com/doc/webapi_overview/responses)
+- Valve documents HTTP `429` for rate limiting but publishes no per-second quota, burst allowance, response headers, or retry interval for these methods. Metadata enrichment stops fan-out on `429`, honors `Retry-After`, and otherwise uses a short fallback delay before resuming the pending pass. [Error codes and responses](https://partner.steampowered.com/doc/webapi_overview/responses)
 - `GetPlayerSummaries/v2`, `ResolveVanityURL/v1`, `GetOwnedGames/v1`, `GetSchemaForGame/v2`, and `GetPlayerAchievements/v1` are listed in the official Steamworks Web API reference and are the stable documented surface, subject to Valve's right to change or terminate it.
 - Steam Store `/api/storesearch`, `/api/appdetails`, Community profile XML, scraping profile/library pages, and similarly discoverable endpoints are not in the official Steamworks Web API reference. They are undocumented contracts and must not be required for account refresh correctness. Existing Store endpoints may remain optional catalog enrichment under their separately documented risk.
 

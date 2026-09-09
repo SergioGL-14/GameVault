@@ -106,7 +106,7 @@ describe('migraciones SQLite', () => {
       expect(
         migrated.prepare('SELECT name FROM achievements WHERE game_id = 1').pluck().get()
       ).toBe('Sujeto de pruebas')
-      expect(migrated.pragma('user_version', { simple: true })).toBe(7)
+      expect(migrated.pragma('user_version', { simple: true })).toBe(8)
       migrated.close()
     } finally {
       rmSync(directory, { recursive: true, force: true })
@@ -137,7 +137,7 @@ describe('migraciones SQLite', () => {
         expect(
           migrated.prepare('SELECT metadata_refreshed_at FROM provider_ownerships').pluck().get()
         ).toBeNull()
-        expect(migrated.pragma('user_version', { simple: true })).toBe(7)
+        expect(migrated.pragma('user_version', { simple: true })).toBe(8)
         migrated.close()
       } finally {
         rmSync(directory, { recursive: true, force: true })
@@ -145,13 +145,85 @@ describe('migraciones SQLite', () => {
     }
   )
 
+  it('requeues unusable Steam cards and preserves existing local artwork on version 7 upgrade', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'gamevault-v7-'))
+    const file = join(directory, 'library.db')
+    try {
+      const previous = openDatabase(file)
+      try {
+        previous.exec(`
+        INSERT INTO games (source, catalog_id, title)
+          VALUES ('steam', 400, 'Portal');
+        INSERT INTO games (source, catalog_id, title, description, cover_url)
+          VALUES ('steam', 620, 'Portal 2', 'Descripción',
+                  'gamevault-image://local/123e4567-e89b-42d3-a456-426614174000.jpg');
+        INSERT INTO games (source, catalog_id, title, description, cover_url, background_url)
+          VALUES ('steam', 730, 'Counter-Strike 2', 'Descripción',
+                  'https://shared.akamai.steamstatic.com/steam/apps/730/header.jpg',
+                  'https://shared.akamai.steamstatic.com/steam/apps/730/background.jpg');
+        INSERT INTO games (source, catalog_id, title, description, cover_path)
+          VALUES ('steam', 10, 'Counter-Strike', 'Descripción',
+                  'gamevault-image://local/323e4567-e89b-42d3-a456-426614174000.jpg');
+        INSERT INTO games (source, catalog_id, title, description, cover_url)
+          VALUES ('steam', 20, '   ', 'Descripción',
+                  'gamevault-image://local/423e4567-e89b-42d3-a456-426614174000.jpg');
+        INSERT INTO external_accounts (provider, external_user_id, display_name)
+          VALUES ('steam', '76561198000000000', 'Jugador');
+        INSERT INTO provider_ownerships
+          (external_account_id, game_id, provider_game_id, provider_title, first_seen_at,
+           last_seen_at, metadata_refreshed_at)
+          VALUES
+            (1, 1, '400', 'Portal', '2026-09-06', '2026-09-06', '2026-09-06'),
+            (1, 2, '620', 'Portal 2', '2026-09-06', '2026-09-06', '2026-09-06'),
+            (1, 3, '730', 'Counter-Strike 2', '2026-09-06', '2026-09-06', '2026-09-06'),
+            (1, 4, '10', 'Counter-Strike', '2026-09-06', '2026-09-06', '2026-09-06'),
+            (1, 5, '20', 'Team Fortress Classic', '2026-09-06', '2026-09-06', '2026-09-06');
+        ALTER TABLE games DROP COLUMN metadata_overrides;
+        PRAGMA user_version = 7;
+        `)
+      } finally {
+        previous.close()
+      }
+
+      const migrated = openDatabase(file)
+      expect(
+        migrated
+          .prepare(
+            'SELECT provider_game_id, metadata_refreshed_at FROM provider_ownerships ORDER BY id'
+          )
+          .all()
+      ).toEqual([
+        { provider_game_id: '400', metadata_refreshed_at: null },
+        { provider_game_id: '620', metadata_refreshed_at: '2026-09-06' },
+        { provider_game_id: '730', metadata_refreshed_at: null },
+        { provider_game_id: '10', metadata_refreshed_at: '2026-09-06' },
+        { provider_game_id: '20', metadata_refreshed_at: null }
+      ])
+      expect(
+        migrated.prepare('SELECT metadata_overrides FROM games WHERE id = 2').pluck().get()
+      ).toBe('["title","description","coverUrl"]')
+      expect(
+        migrated.prepare('SELECT metadata_overrides FROM games WHERE id = 3').pluck().get()
+      ).toBe('["title","description"]')
+      expect(
+        migrated.prepare('SELECT cover_url, metadata_overrides FROM games WHERE id = 4').get()
+      ).toEqual({
+        cover_url: 'gamevault-image://local/323e4567-e89b-42d3-a456-426614174000.jpg',
+        metadata_overrides: '["title","description","coverUrl"]'
+      })
+      migrated.close()
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
   it('creates the achievement schema for a fresh database with enforced ownership', () => {
     const db = openDatabase(':memory:')
     const gameId = db.prepare("INSERT INTO games (title) VALUES ('Celeste')").run().lastInsertRowid
     db.prepare("INSERT INTO achievements (game_id, name) VALUES (?, 'Primer paso')").run(gameId)
 
     expect(db.pragma('foreign_keys', { simple: true })).toBe(1)
-    expect(db.pragma('user_version', { simple: true })).toBe(7)
+    expect(db.pragma('user_version', { simple: true })).toBe(8)
     expect(db.prepare('SELECT name FROM achievements').pluck().get()).toBe('Primer paso')
     expect(() =>
       db.prepare("INSERT INTO achievements (game_id, name) VALUES (999, 'Huérfano')").run()
@@ -204,7 +276,7 @@ describe('migraciones SQLite', () => {
 
       const second = openDatabase(file)
       expect(second.prepare('SELECT title FROM games').pluck().all()).toEqual(['Portal'])
-      expect(second.pragma('user_version', { simple: true })).toBe(7)
+      expect(second.pragma('user_version', { simple: true })).toBe(8)
       second.close()
     } finally {
       rmSync(directory, { recursive: true, force: true })
@@ -235,7 +307,7 @@ describe('migraciones SQLite', () => {
       expect(
         migrated.prepare('SELECT provider_unlocked, provider_unlocked_at FROM achievements').get()
       ).toEqual({ provider_unlocked: 1, provider_unlocked_at: '2026-09-06' })
-      expect(migrated.pragma('user_version', { simple: true })).toBe(7)
+      expect(migrated.pragma('user_version', { simple: true })).toBe(8)
       migrated.close()
     } finally {
       rmSync(directory, { recursive: true, force: true })
@@ -292,7 +364,7 @@ describe('migraciones SQLite', () => {
       expect(
         migrated.prepare('SELECT metadata_refreshed_at FROM provider_ownerships').pluck().get()
       ).toBeNull()
-      expect(migrated.pragma('user_version', { simple: true })).toBe(7)
+      expect(migrated.pragma('user_version', { simple: true })).toBe(8)
       migrated.close()
     } finally {
       rmSync(directory, { recursive: true, force: true })

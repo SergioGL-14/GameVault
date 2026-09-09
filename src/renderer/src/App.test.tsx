@@ -5,6 +5,7 @@ import axe from 'axe-core'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { GameVaultApi } from '../../desktop-api'
 import type { Achievement, AchievementInput, Game, GameInput } from '../../library/model'
+import type { SteamMetadataProgress } from '../../steam/model'
 import App from './App'
 
 const profile = {
@@ -153,6 +154,8 @@ function createApi(
       ok: true as const,
       value: { games, metadataUpdated: 0, failures: [], pending: 0 }
     })),
+    cancelSteamMetadata: vi.fn(async () => undefined),
+    onSteamMetadataProgress: vi.fn(() => () => undefined),
     refreshSteamAchievements: vi.fn()
   }
 }
@@ -352,6 +355,54 @@ describe('core accessibility', () => {
 })
 
 describe('critical library flows', () => {
+  it('shows Steam metadata progress globally and lets the user cancel it', async () => {
+    const api = createApi([game])
+    let progressListener: ((progress: SteamMetadataProgress) => void) | undefined
+    vi.mocked(api.onSteamMetadataProgress).mockImplementation((listener) => {
+      progressListener = listener
+      return () => undefined
+    })
+    window.api = api
+    render(<App />)
+    await waitFor(() => expect(api.listGames).toHaveBeenCalled())
+
+    act(() => {
+      progressListener?.({
+        status: 'running',
+        currentTitle: 'Portal',
+        processed: 3,
+        total: 10,
+        metadataUpdated: 2,
+        failed: 1,
+        pending: 7
+      })
+    })
+
+    expect(screen.getByRole('status').textContent).toContain('Portal')
+    expect(
+      (
+        screen.getByRole('progressbar', {
+          name: 'Progreso de metadatos de Steam'
+        }) as HTMLProgressElement
+      ).value
+    ).toBe(3)
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar metadatos de Steam' }))
+    await waitFor(() => expect(api.cancelSteamMetadata).toHaveBeenCalledOnce())
+
+    act(() => {
+      progressListener?.({
+        status: 'completed',
+        currentTitle: null,
+        processed: 3,
+        total: 10,
+        metadataUpdated: 2,
+        failed: 1,
+        pending: 7
+      })
+    })
+    expect(screen.getByRole('status').textContent).toContain('quedan 7 fichas pendientes')
+  })
+
   it('updates and reports an existing game instead of duplicating it', async () => {
     const api = createApi([game])
     vi.mocked(api.createGame).mockResolvedValueOnce({
@@ -393,9 +444,20 @@ describe('critical library flows', () => {
   })
 
   it('preserves metadata completed in the background when the editor saves', async () => {
-    const providerGame = { ...game, source: 'steam' as const, catalogId: 400 }
-    const enriched = { ...providerGame, description: 'Descripción de Steam' }
+    const providerGame = {
+      ...game,
+      source: 'steam' as const,
+      catalogId: 400,
+      coverUrl: 'https://steam.example/old.jpg'
+    }
+    const enriched = {
+      ...providerGame,
+      title: 'Portal',
+      description: 'Descripción de Steam',
+      coverUrl: 'gamevault-image://local/123e4567-e89b-42d3-a456-426614174000.jpg'
+    }
     let completeRefresh!: (value: Awaited<ReturnType<GameVaultApi['refreshSteamMetadata']>>) => void
+    let progressListener: ((progress: SteamMetadataProgress) => void) | undefined
     const api = createApi([providerGame])
     vi.mocked(api.getSteamConnection).mockResolvedValue({
       configured: true,
@@ -412,24 +474,123 @@ describe('critical library flows', () => {
         completeRefresh = resolve
       })
     )
+    vi.mocked(api.onSteamMetadataProgress).mockImplementation((listener) => {
+      progressListener = listener
+      return () => undefined
+    })
     await openEditor(api)
     fireEvent.change(screen.getByLabelText('Notas personales'), {
       target: { value: 'Mi nota' }
     })
 
     await waitFor(() => expect(api.refreshSteamMetadata).toHaveBeenCalled())
+    act(() => {
+      progressListener?.({
+        status: 'running',
+        currentTitle: providerGame.title,
+        processed: 0,
+        total: 1,
+        metadataUpdated: 0,
+        failed: 0,
+        pending: 1
+      })
+    })
+    expect(
+      (screen.getByRole('button', { name: 'Guardar cambios' }) as HTMLButtonElement).disabled
+    ).toBe(true)
+    act(() => {
+      progressListener?.({
+        status: 'completed',
+        currentTitle: null,
+        processed: 1,
+        total: 1,
+        metadataUpdated: 1,
+        failed: 0,
+        pending: 0
+      })
+    })
+    expect(
+      (screen.getByRole('button', { name: 'Guardar cambios' }) as HTMLButtonElement).disabled
+    ).toBe(true)
     await act(async () => {
       completeRefresh({
         ok: true,
         value: { games: [enriched], metadataUpdated: 1, failures: [], pending: 0 }
       })
     })
+    await waitFor(() =>
+      expect(
+        (screen.getByRole('button', { name: 'Guardar cambios' }) as HTMLButtonElement).disabled
+      ).toBe(false)
+    )
     fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }))
 
     await waitFor(() =>
       expect(api.updateGame).toHaveBeenCalledWith(
         providerGame.id,
-        expect.objectContaining({ description: 'Descripción de Steam', notes: 'Mi nota' })
+        expect.objectContaining({
+          title: 'Portal',
+          description: 'Descripción de Steam',
+          coverUrl: enriched.coverUrl,
+          notes: 'Mi nota'
+        })
+      )
+    )
+  })
+
+  it('reconciles persisted metadata before re-enabling saves after a local refresh failure', async () => {
+    const providerGame = { ...game, source: 'steam' as const, catalogId: 400 }
+    const persisted = { ...providerGame, description: 'Guardada antes del fallo' }
+    let failMetadata!: (reason: Error) => void
+    let completeReload!: (games: Game[]) => void
+    const api = createApi([providerGame])
+    vi.mocked(api.getSteamConnection).mockResolvedValue({
+      configured: true,
+      credentialSource: 'web-session',
+      account: {
+        steamId: '76561198000000000',
+        personaName: 'Jugador Steam',
+        avatarUrl: null,
+        lastRefreshedAt: '2026-09-07T10:00:00.000Z'
+      }
+    })
+    vi.mocked(api.refreshSteamMetadata).mockReturnValue(
+      new Promise((_resolve, reject) => {
+        failMetadata = reject
+      })
+    )
+    vi.mocked(api.listGames)
+      .mockResolvedValueOnce([providerGame])
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            completeReload = resolve
+          })
+      )
+
+    await openEditor(api)
+    await waitFor(() => expect(api.refreshSteamMetadata).toHaveBeenCalled())
+    expect(
+      (screen.getByRole('button', { name: 'Guardar cambios' }) as HTMLButtonElement).disabled
+    ).toBe(true)
+
+    act(() => failMetadata(new Error('disk full')))
+    await waitFor(() => expect(api.listGames).toHaveBeenCalledTimes(2))
+    expect(
+      (screen.getByRole('button', { name: 'Guardar cambios' }) as HTMLButtonElement).disabled
+    ).toBe(true)
+    await act(async () => completeReload([persisted]))
+    await waitFor(() =>
+      expect(
+        (screen.getByRole('button', { name: 'Guardar cambios' }) as HTMLButtonElement).disabled
+      ).toBe(false)
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }))
+    await waitFor(() =>
+      expect(api.updateGame).toHaveBeenCalledWith(
+        providerGame.id,
+        expect.objectContaining({ description: persisted.description })
       )
     )
   })
@@ -741,6 +902,79 @@ describe('critical library flows', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('does not restart a queued metadata pass after explicit cancellation', async () => {
+    const api = createApi([game])
+    let resolveMetadata:
+      ((value: Awaited<ReturnType<GameVaultApi['refreshSteamMetadata']>>) => void) | undefined
+    let progressListener: ((progress: SteamMetadataProgress) => void) | undefined
+    vi.mocked(api.getSteamConnection).mockResolvedValue({
+      configured: true,
+      credentialSource: 'web-session',
+      account: {
+        steamId: '76561198000000000',
+        personaName: 'Jugador Steam',
+        avatarUrl: null,
+        lastRefreshedAt: '2026-09-06T10:00:00.000Z'
+      }
+    })
+    vi.mocked(api.refreshSteamMetadata).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveMetadata = resolve
+        })
+    )
+    vi.mocked(api.previewSteamRefresh).mockResolvedValueOnce({
+      ok: true,
+      value: { previewId: 'empty', items: [] }
+    })
+    vi.mocked(api.applySteamRefresh).mockResolvedValueOnce({
+      ok: true,
+      value: { games: [{ ...game, ownedOn: ['steam'] }] }
+    })
+    vi.mocked(api.onSteamMetadataProgress).mockImplementation((listener) => {
+      progressListener = listener
+      return () => undefined
+    })
+
+    window.api = api
+    render(<App />)
+    await waitFor(() => expect(api.refreshSteamMetadata).toHaveBeenCalledOnce())
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir configuración' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Refrescar ahora' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Aplicar refresco' }))
+    await screen.findByText(/Completando metadatos/)
+    act(() => {
+      progressListener?.({
+        status: 'running',
+        currentTitle: 'Portal',
+        processed: 0,
+        total: 1,
+        metadataUpdated: 0,
+        failed: 0,
+        pending: 1
+      })
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar metadatos de Steam' }))
+    await waitFor(() => expect(api.cancelSteamMetadata).toHaveBeenCalledOnce())
+    await act(async () => {
+      resolveMetadata?.({
+        ok: true,
+        value: {
+          games: [{ ...game, title: 'Portal' }],
+          metadataUpdated: 1,
+          failures: [],
+          pending: 1,
+          cancelled: true
+        }
+      })
+    })
+
+    expect(api.refreshSteamMetadata).toHaveBeenCalledOnce()
+    fireEvent.click(screen.getByRole('button', { name: 'BIBLIOTECA' }))
+    expect(screen.getByRole('button', { name: /Portal/ })).toBeTruthy()
   })
 
   it('imports Steam achievements through a separate explicit action', async () => {

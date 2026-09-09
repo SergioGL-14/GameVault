@@ -5,6 +5,7 @@ This file mirrors [GitHub issue #11](https://github.com/SergioGL-14/GameVault/is
 Update this file and issue #11 together whenever an item is added, reprioritized, completed, or deferred. If they disagree, stop roadmap work and reconcile them before selecting the next delivery.
 
 The current multi-delivery design is documented in [`docs/library-achievement-plan.md`](docs/library-achievement-plan.md).
+The rationale and boundaries for the next Steam and storage improvements are recorded in [`docs/next-improvements.md`](docs/next-improvements.md).
 
 ## Foundation
 
@@ -22,11 +23,15 @@ The current multi-delivery design is documented in [`docs/library-achievement-pl
 
 ## Next product deliveries
 
+- [ ] [#43 Make Steam metadata enrichment reliable and observable](https://github.com/SergioGL-14/GameVault/issues/43)
+- [ ] [#42 Expand Steam game records with activity and store details](https://github.com/SergioGL-14/GameVault/issues/42)
+- [ ] [#45 Reclaim orphaned managed images safely](https://github.com/SergioGL-14/GameVault/issues/45)
 - [ ] [#37 Add a second provider without duplicating games or achievements](https://github.com/SergioGL-14/GameVault/issues/37)
 
 ## Later
 
 - [ ] [#36 Provide optional achievement packs for games without official achievements](https://github.com/SergioGL-14/GameVault/issues/36)
+- [ ] [#44 Add opt-in scheduled Steam ownership refresh](https://github.com/SergioGL-14/GameVault/issues/44)
 - [ ] [#8 Make the profile showcase configurable](https://github.com/SergioGL-14/GameVault/issues/8)
 - [ ] [#2 Add Spanish and English localization](https://github.com/SergioGL-14/GameVault/issues/2)
 
