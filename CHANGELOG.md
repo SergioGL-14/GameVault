@@ -20,6 +20,11 @@
 
 ### Changed
 
+- Moved the build to Vite 8 and electron-vite 6 with the supported Rolldown-based toolchain.
+
+- Updated React, development tools, and Electron packaging dependencies, including the fast-uri, undici, and Zod fixes.
+- Updated source-map-js to 1.2.2 to fix CVE-2026-93749 and support CSP environments without unsafe-eval.
+
 - Reworked the library into a dense cover wall with search and status filters.
 - Rebuilt the profile around a wide identity header, collection summary, showcases, and real library statistics.
 - Increased the default window to 1440 × 900 with a 980 × 680 minimum.
