@@ -6,6 +6,8 @@ Dependabot checks npm dependencies and GitHub Actions every Monday. Compatible n
 
 Dependabot pull requests are not merged automatically. Each update must pass the required `checks` job and receive a manual review before it is merged.
 
+ESLint 10 remains blocked until `eslint-plugin-react` declares support for it. Do not bypass the peer dependency with `--force` or `--legacy-peer-deps`; adopt ESLint 10 together with a compatible React plugin release.
+
 ## Protected branch
 
 The `Protect main` repository ruleset applies to `main` and:
