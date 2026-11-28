@@ -10,6 +10,20 @@ ESLint remains on version 9 with @electron-toolkit/eslint-config-ts 3.1.0. Versi
 
 Upgrade both packages when eslint-plugin-react declares ESLint 10 support and passes the project checks. Do not bypass peer dependencies with --force or --legacy-peer-deps.
 
+### Known dependency security findings
+
+As of 2026-11-28, the development dependency tree contains six moderate npm audit findings associated with [GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249).
+
+The affected minimatch versions are 9.0.9 through @electron/universal 2.0.3 and 10.2.6 through app-builder-lib 26.18.0.
+
+These dependencies belong to the packaging toolchain. The production dependency audit reports no vulnerabilities. No exposure through the distributed application has been identified.
+
+Keep electron-builder on the stable release line. Review the dependency tree when a compatible upstream fix becomes available.
+
+Upstream tracking: [electron-builder #10538](https://github.com/electron-userland/electron-builder/pull/10538) and [#10458](https://github.com/electron-userland/electron-builder/pull/10458).
+
+Do not apply global minimatch overrides, downgrade electron-builder, or adopt prerelease versions solely to clear audit findings.
+
 ## Protected branch
 
 The `Protect main` repository ruleset applies to `main` and:
