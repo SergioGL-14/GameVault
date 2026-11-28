@@ -20,6 +20,7 @@
 
 ### Changed
 
+- Updated the typescript-eslint toolchain to resolve the minimatch security advisory in the lint dependency chain.
 - Moved the build to Vite 8 and electron-vite 6 with the supported Rolldown-based toolchain.
 - Updated Electron to version 45 and the Electron Toolkit ESLint configuration to version 4.
 
