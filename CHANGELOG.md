@@ -22,7 +22,8 @@
 
 - Updated the typescript-eslint toolchain to resolve the minimatch security advisory in the lint dependency chain.
 - Moved the build to Vite 8 and electron-vite 6 with the supported Rolldown-based toolchain.
-- Updated Electron to version 45 and the Electron Toolkit ESLint configuration to version 4.
+- Updated Electron to version 45.
+- Restored compatibility with ESLint 9 by using Electron Toolkit ESLint Config TS 3.1.0 while preserving the existing lint rules.
 
 - Updated React, development tools, and Electron packaging dependencies, including the fast-uri, undici, and Zod fixes.
 - Updated source-map-js to 1.2.2 to fix CVE-2026-93749 and support CSP environments without unsafe-eval.

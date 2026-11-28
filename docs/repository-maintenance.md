@@ -6,7 +6,9 @@ Dependabot checks npm dependencies and GitHub Actions every Monday. Compatible n
 
 Dependabot pull requests are not merged automatically. Each update must pass the required `checks` job and receive a manual review before it is merged.
 
-ESLint 10 remains blocked until `eslint-plugin-react` declares support for it. Do not bypass the peer dependency with `--force` or `--legacy-peer-deps`; adopt ESLint 10 together with a compatible React plugin release.
+ESLint remains on version 9 with @electron-toolkit/eslint-config-ts 3.1.0. Version 4 of the Toolkit configuration depends on @eslint/js 10, which requires ESLint 10.
+
+Upgrade both packages when eslint-plugin-react declares ESLint 10 support and passes the project checks. Do not bypass peer dependencies with --force or --legacy-peer-deps.
 
 ## Protected branch
 
