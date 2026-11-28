@@ -7,6 +7,13 @@ import eslintPluginReactRefresh from 'eslint-plugin-react-refresh'
 
 export default defineConfig(
   { ignores: ['**/node_modules', '**/dist', '**/out'] },
+  {
+    rules: {
+      'no-unassigned-vars': 'error',
+      'no-useless-assignment': 'error',
+      'preserve-caught-error': 'error'
+    }
+  },
   tseslint.configs.recommended,
   eslintPluginReact.configs.flat.recommended,
   eslintPluginReact.configs.flat['jsx-runtime'],
