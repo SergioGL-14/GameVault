@@ -22,7 +22,8 @@
 
 - Updated the typescript-eslint toolchain to resolve the minimatch security advisory in the lint dependency chain.
 - Moved the build to Vite 8 and electron-vite 6 with the supported Rolldown-based toolchain.
-- Updated Electron to version 45.
+- Updated better-sqlite3 to 13.1.1 with SQLite 3.54.1.
+- Updated Electron to 45.5.0 and refreshed the Vite, Vitest, Prettier, accessibility, React Refresh, and TypeScript declaration dependencies.
 - Restored compatibility with ESLint 9 by using Electron Toolkit ESLint Config TS 3.1.0 while preserving the existing lint rules.
 
 - Updated React, development tools, and Electron packaging dependencies, including the fast-uri, undici, and Zod fixes.
